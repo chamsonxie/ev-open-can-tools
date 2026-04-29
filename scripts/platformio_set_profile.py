@@ -18,8 +18,10 @@ OPTIONAL_DEFINES = (
     "BYPASS_TLSSC_REQUIREMENT",
     "NAG_KILLER",
     "ENHANCED_AUTOPILOT",
+    "INJECTION_AFTER_AP",
 )
 MANAGED_DEFINES = set(DRIVER_DEFINES + VEHICLE_DEFINES + OPTIONAL_DEFINES)
+MANAGED_DEFINE_ORDER = DRIVER_DEFINES + VEHICLE_DEFINES + OPTIONAL_DEFINES
 DEFINE_PATTERN = re.compile(
     r"^(?P<indent>\s*)(?P<comment>//\s*)?#define\s+(?P<name>[A-Z0-9_]+)(?P<rest>.*)$"
 )
@@ -66,14 +68,9 @@ def rewrite_define(line, should_enable):
 def main():
     args = parse_args()
     profile_path = Path(args.file)
-    if args.driver == "DRIVER_TWAI":
-        enabled = {args.driver, args.vehicle, *OPTIONAL_DEFINES}
-        vehicle_summary = f"default={args.vehicle}"
-        options_summary = ", ".join(OPTIONAL_DEFINES)
-    else:
-        enabled = {args.driver, args.vehicle, *args.enable}
-        vehicle_summary = args.vehicle
-        options_summary = ", ".join(args.enable) if args.enable else "none"
+    enabled = {args.driver, args.vehicle, *args.enable}
+    vehicle_summary = f"default={args.vehicle}" if args.driver == "DRIVER_TWAI" else args.vehicle
+    options_summary = ", ".join(args.enable) if args.enable else "none"
 
     lines = profile_path.read_text(encoding="utf-8").splitlines(keepends=True)
     updated_lines = []
@@ -88,11 +85,12 @@ def main():
         else:
             updated_lines.append(line)
 
-    missing = sorted(MANAGED_DEFINES - seen)
+    missing = [name for name in MANAGED_DEFINE_ORDER if name not in seen]
     if missing:
-        raise SystemExit(
-            f"Missing managed define lines in {profile_path}: {', '.join(missing)}"
-        )
+        if updated_lines and not updated_lines[-1].endswith(("\n", "\r")):
+            updated_lines[-1] = f"{updated_lines[-1]}\n"
+        for name in missing:
+            updated_lines.append(rewrite_define(f"#define {name}\n", name in enabled))
 
     profile_path.write_text("".join(updated_lines), encoding="utf-8")
 

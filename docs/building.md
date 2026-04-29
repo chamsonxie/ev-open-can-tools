@@ -18,6 +18,10 @@ The project is PlatformIO-only. Pick the correct board environment in `platformi
 | `esp32_ext_mcp2515` | ESP32-S3 + external MCP2515 | Dashboard build for SPI MCP2515 hardware |
 | `waveshare_ESP32_S3_RS485_CAN` | Waveshare ESP32-S3 RS485/CAN | TWAI dashboard build |
 
+## Hardware Notes
+
+Some CAN boards and adapters include an onboard 120 ohm termination resistor. When installing on an existing vehicle CAN bus, do not add another termination point: cut or remove the board's 120 ohm resistor if the adapter has one fitted.
+
 ## Selecting Driver, Vehicle, And Defaults
 
 You can edit [`platformio_profile.h`](../platformio_profile.h) directly:
@@ -32,6 +36,8 @@ You can also use the helper script:
 ```bash
 python scripts/platformio_set_profile.py --driver DRIVER_ESP32_EXT_MCP2515 --vehicle HW4 --enable EMERGENCY_VEHICLE_DETECTION --enable ENHANCED_AUTOPILOT
 ```
+
+Add `--enable INJECTION_AFTER_AP` when `ENHANCED_AUTOPILOT` should wait until AP is active before mux 1 injection.
 
 For `DRIVER_TWAI` dashboard builds, the helper script intentionally enables all optional feature defines so the dashboard can control those options at runtime; the selected vehicle then becomes the default UI mode.
 
