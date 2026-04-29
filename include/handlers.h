@@ -98,7 +98,10 @@ struct CarManagerBase
     }
 
     // Force Summoning off and reset sprSeen when the vehicle is observed
-    // in Park, so a manual P->D shift afterwards correctly waits for AP.
+    // in Park with no active autonomy episode, so a manual P->D shift
+    // afterwards correctly waits for AP. During Smart Summon startup the
+    // DI can report ACA=1 while gear is still P; keep sprSeen latched so
+    // it survives the pending shift out of Park.
     void clearSummonOnPark()
     {
         Summoning = false;
@@ -106,6 +109,12 @@ struct CarManagerBase
 #ifndef NATIVE_BUILD
         lastSummonActivityMs = 0;
 #endif
+    }
+
+    void clearSummonOnParkIfAcaInactive(uint8_t gear)
+    {
+        if (gear == 1 && !lastAca)
+            clearSummonOnPark();
     }
 
     bool shouldInjectSpeedProfile() const
@@ -164,9 +173,9 @@ struct LegacyHandler : public CarManagerBase
                 // SNA (7) and INVALID (0) can blip during gear transitions
                 // (e.g. during a Summon shift to Reverse) and would
                 // otherwise drop the gate mid-summon.
-                if (diGear == 1) clearSummonOnPark();
+                updateSummonFromDISystemStatus(frame);
+                clearSummonOnParkIfAcaInactive(diGear);
             }
-            updateSummonFromDISystemStatus(frame);
             return;
         }
         if (frame.id == 390)
@@ -178,7 +187,7 @@ struct LegacyHandler : public CarManagerBase
                 Parked = isVehicleParked(difGear);
                 // Only clear Summoning on a *definitive* Park (gear==1).
                 // SNA (7) and INVALID (0) can blip during gear transitions.
-                if (difGear == 1) clearSummonOnPark();
+                clearSummonOnParkIfAcaInactive(difGear);
             }
             return;
         }
@@ -259,9 +268,9 @@ struct HW3Handler : public CarManagerBase
                 // SNA (7) and INVALID (0) can blip during gear transitions
                 // (e.g. during a Summon shift to Reverse) and would
                 // otherwise drop the gate mid-summon.
-                if (diGear == 1) clearSummonOnPark();
+                updateSummonFromDISystemStatus(frame);
+                clearSummonOnParkIfAcaInactive(diGear);
             }
-            updateSummonFromDISystemStatus(frame);
             return;
         }
         if (frame.id == 390)
@@ -273,7 +282,7 @@ struct HW3Handler : public CarManagerBase
                 Parked = isVehicleParked(difGear);
                 // Only clear Summoning on a *definitive* Park (gear==1).
                 // SNA (7) and INVALID (0) can blip during gear transitions.
-                if (difGear == 1) clearSummonOnPark();
+                clearSummonOnParkIfAcaInactive(difGear);
             }
             return;
         }
@@ -528,9 +537,9 @@ struct HW4Handler : public CarManagerBase
                 // SNA (7) and INVALID (0) can blip during gear transitions
                 // (e.g. during a Summon shift to Reverse) and would
                 // otherwise drop the gate mid-summon.
-                if (diGear == 1) clearSummonOnPark();
+                updateSummonFromDISystemStatus(frame);
+                clearSummonOnParkIfAcaInactive(diGear);
             }
-            updateSummonFromDISystemStatus(frame);
             return;
         }
         if (frame.id == 390)
@@ -542,7 +551,7 @@ struct HW4Handler : public CarManagerBase
                 Parked = isVehicleParked(difGear);
                 // Only clear Summoning on a *definitive* Park (gear==1).
                 // SNA (7) and INVALID (0) can blip during gear transitions.
-                if (difGear == 1) clearSummonOnPark();
+                clearSummonOnParkIfAcaInactive(difGear);
             }
             return;
         }
