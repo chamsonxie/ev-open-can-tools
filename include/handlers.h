@@ -34,6 +34,15 @@ struct CarManagerBase
     Shared<int> speedOffset{0};
 
     unsigned long lastSummonActivityMs = 0;
+    // Summon-vs-AP/TACC discrimination state. ACA (DI_autonomyControlActive)
+    // alone is set during AP, TACC, and Smart Summon, so it cannot be the
+    // sole gate signal. We only treat ACA as "summon active" when we have
+    // also observed UI_selfParkRequest go non-zero during the current
+    // autonomy episode. ACA falling edge clears sprSeen so the next ACA
+    // rising edge (e.g. user engaging TACC after a completed summon) does
+    // not falsely keep the gate open.
+    bool sprSeen = false;
+    bool lastAca = false;
 
     void (*onFrame)(const CanFrame &) = nullptr;
     void (*onSend)(uint8_t mux, bool ok) = nullptr;
@@ -48,67 +57,52 @@ struct CarManagerBase
         return (bool)APActive || (bool)Parked || (bool)Summoning;
     }
 
-    // Combined Summon-active activity tracker. Either signal can refresh
-    // the latch; flag clears 5 s after the last refresh.
-    void updateSummonActivity(bool active)
+    // Recompute Summoning from current sprSeen + lastAca state. Summoning
+    // requires both: ACA bit currently set AND we have seen at least one
+    // UI_selfParkRequest non-zero command in the current autonomy episode.
+    // This excludes plain TACC (ACA=1, no spr) and post-AP ACA tail
+    // (ACA blip with no fresh spr) from latching the gate.
+    void recomputeSummoning()
     {
-        if (active)
-        {
-#ifndef NATIVE_BUILD
-            lastSummonActivityMs = millis();
-#endif
-            Summoning = true;
-            return;
-        }
-#ifndef NATIVE_BUILD
-        if (lastSummonActivityMs != 0 && millis() - lastSummonActivityMs <= 5000)
-            return;
-        Summoning = false;
-#else
-        Summoning = false;
-#endif
+        Summoning = lastAca && sprSeen;
     }
 
     // Update summon state from UI_driverAssistControl (CAN ID 1016).
-    // Tesla DBC: UI_selfParkRequest at byte 3 bits 4-7 carries the active
-    // summon / self-park command (4=PRIME, 5=PAUSE, 7/8=AUTO_SUMMON_FWD/REV,
-    // 11=SMART_SUMMON, 0=NONE). spr is transient: it returns to 0 within a
-    // few hundred ms after a command is issued even though the car keeps
-    // driving autonomously, so spr by itself cannot keep the gate open
-    // through the whole summon. UI_summonHeartbeat (byte 0 bits 2-3) is
-    // unusable here because once summon has run, heartbeat keeps cycling
-    // 0..3 indefinitely until reboot. The DI_autonomyControlActive bit on
-    // CAN 280 is the sustained signal and is also tracked, see
-    // updateSummonFromDISystemStatus().
+    // Tesla DBC: UI_selfParkRequest at byte 3 bits 4-7 (4=PRIME, 5=PAUSE,
+    // 7/8=AUTO_SUMMON_FWD/REV, 11=SMART_SUMMON, 0=NONE). Records that a
+    // summon command has been issued during the current autonomy episode.
     void updateSummonFrom1016(const CanFrame &frame)
     {
         if (frame.dlc < 4)
             return;
         uint8_t spr = static_cast<uint8_t>((frame.data[3] >> 4) & 0x0F);
-        updateSummonActivity(spr != 0);
+        if (spr != 0)
+            sprSeen = true;
+        recomputeSummoning();
     }
 
     // Update summon state from DI_systemStatus (CAN ID 280).
-    // Tesla DBC: DI_autonomyControlActive at bit 50 (byte 6 bit 2). This
-    // bit is held high for the entire duration the DI is being driven by
-    // an autonomy stack (Smart Summon, Smart Park, Autopark, etc.) and
-    // is the most reliable signal that the car is currently moving under
-    // remote/autonomous control rather than under driver control.
+    // Tesla DBC: DI_autonomyControlActive at bit 50 (byte 6 bit 2). Held
+    // high while the DI is being driven by AP, TACC, Smart Summon, etc.
+    // ACA falling edge ends the autonomy episode and clears sprSeen so a
+    // subsequent TACC engagement (ACA=1 again) does not re-latch the gate.
     void updateSummonFromDISystemStatus(const CanFrame &frame)
     {
         if (frame.dlc < 7)
             return;
         bool aca = (frame.data[6] & 0x04) != 0;
-        updateSummonActivity(aca);
+        if (lastAca && !aca)
+            sprSeen = false;
+        lastAca = aca;
+        recomputeSummoning();
     }
 
-    // Force Summoning off when the vehicle is observed in Park. This handles
-    // the case where summon ends (spr=0 sustained) and the driver shifts back
-    // to P before any Drive-time timeout could elapse, ensuring a manual
-    // P->D shift afterwards correctly waits for AP.
+    // Force Summoning off and reset sprSeen when the vehicle is observed
+    // in Park, so a manual P->D shift afterwards correctly waits for AP.
     void clearSummonOnPark()
     {
         Summoning = false;
+        sprSeen = false;
 #ifndef NATIVE_BUILD
         lastSummonActivityMs = 0;
 #endif
