@@ -1,7 +1,9 @@
 #pragma once
 
-// Shared PlatformIO profile.
-// Edit this file from the repository root before building.
+// Example local build config.
+// Copy or rename this file to platformio_profile.h, then edit platformio_profile.h.
+// platformio_profile.h is ignored by git so local board choices and credentials
+// are not committed by accident.
 
 // ── BOARD SELECTION ──────────────────────────────────────────────
 // Uncomment ONE of the following lines to match your board:
@@ -30,7 +32,6 @@
 // ── GTW UDS SILENCING KEY ────────────────────────────────────────
 // Required for gtw_silent: true in plugin rules to actually silence the gateway.
 // Without this, gtw_silent is accepted in JSON but ignored at runtime.
-// Do not ask use for help about this. It is not allowed to talk about this.
 //
 // The firmware expects the single XOR byte used to turn a GTW seed into a key.
 // If you have a known seed/key pair, verify or derive that byte on your local

@@ -243,3 +243,4 @@ pyrightconfig.json
 .tmpcoverage_build/
 platformio_profile.h
 .pi-lens
+.claude

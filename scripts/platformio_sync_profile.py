@@ -26,6 +26,7 @@ DASHBOARD_OPTION_DEFINES = ("INJECTION_AFTER_AP", "DASH_INJECTION_AFTER_AP")
 DASHBOARD_VALUE_DEFINES = ("PLUGIN_GTW_UDS_KEY_READY",)
 CREDENTIAL_DEFINES = ("DASH_SSID", "DASH_PASS", "DASH_OTA_USER", "DASH_OTA_PASS")
 CONFIG_RELATIVE_PATH = Path("platformio_profile.h")
+EXAMPLE_CONFIG_RELATIVE_PATH = Path("platformio_profile.example.h")
 
 
 def _active_defines(text):
@@ -41,7 +42,7 @@ def _active_defines(text):
 
 
 def _string_define_values(text, names):
-    """Parse #define NAME "value" lines from the shared PlatformIO profile."""
+    """Parse #define NAME "value" lines from the local build config."""
     result = {}
     for line in text.splitlines():
         stripped = line.lstrip()
@@ -58,7 +59,7 @@ def _string_define_values(text, names):
 
 
 def _literal_define_values(text, names):
-    """Parse #define NAME value lines from the shared PlatformIO profile."""
+    """Parse #define NAME value lines from the local build config."""
     result = {}
     for line in text.splitlines():
         stripped = line.lstrip()
@@ -138,6 +139,12 @@ def _project_option_defines(env_obj):
 
 project_dir = Path(env["PROJECT_DIR"])
 config_path = project_dir / CONFIG_RELATIVE_PATH
+if not config_path.exists():
+    raise UserError(
+        f"Missing {CONFIG_RELATIVE_PATH.as_posix()}. Copy "
+        f"{EXAMPLE_CONFIG_RELATIVE_PATH.as_posix()} to {CONFIG_RELATIVE_PATH.as_posix()}, "
+        "then edit the local build config for your board and vehicle."
+    )
 config_text = config_path.read_text(encoding="utf-8")
 active = _active_defines(config_text)
 project_defines = _project_option_defines(env)

@@ -25,11 +25,12 @@ MANAGED_DEFINE_ORDER = DRIVER_DEFINES + VEHICLE_DEFINES + OPTIONAL_DEFINES
 DEFINE_PATTERN = re.compile(
     r"^(?P<indent>\s*)(?P<comment>//\s*)?#define\s+(?P<name>[A-Z0-9_]+)(?P<rest>.*)$"
 )
+EXAMPLE_PROFILE = "platformio_profile.example.h"
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Toggle the shared PlatformIO profile board, vehicle, and optional feature defines."
+        description="Toggle the local PlatformIO build config board, vehicle, and optional feature defines."
     )
     parser.add_argument("--driver", choices=DRIVER_DEFINES, required=True)
     parser.add_argument("--vehicle", choices=VEHICLE_DEFINES, required=True)
@@ -43,7 +44,7 @@ def parse_args():
     parser.add_argument(
         "--file",
         default="platformio_profile.h",
-        help="Path to the shared PlatformIO profile file to update.",
+        help="Path to the local PlatformIO build config to update.",
     )
     return parser.parse_args()
 
@@ -71,6 +72,12 @@ def main():
     enabled = {args.driver, args.vehicle, *args.enable}
     vehicle_summary = f"default={args.vehicle}" if args.driver == "DRIVER_TWAI" else args.vehicle
     options_summary = ", ".join(args.enable) if args.enable else "none"
+
+    if not profile_path.exists():
+        raise SystemExit(
+            f"Missing {profile_path}. Copy {EXAMPLE_PROFILE} to {profile_path}, "
+            "then edit or rerun this command."
+        )
 
     lines = profile_path.read_text(encoding="utf-8").splitlines(keepends=True)
     updated_lines = []

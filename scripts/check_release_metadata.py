@@ -28,7 +28,7 @@ RELEVANT_PREFIXES = (
 RELEVANT_FILES = {
     "README.md",
     "platformio.ini",
-    "platformio_profile.h",
+    "platformio_profile.example.h",
 }
 RELEASE_METADATA_FILES = {
     "CHANGELOG.md",
