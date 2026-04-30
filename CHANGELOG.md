@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - RP2040 MCP2515 builds now recover the CAN controller after repeated TX failures or MCP2515 bus-off (`EFLG_TXBO`) instead of staying silent until power-cycled.
+- CI test and release builds now create their local `platformio_profile.h` from `platformio_profile.example.h` before applying per-board build profiles.
 
 ## [2.5.2] - 2026-04-29
 
