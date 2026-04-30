@@ -86,10 +86,11 @@ Non-dashboard builds keep the core CAN modification logic but do not provide the
 If you already know what you are doing, the basic flow is:
 
 1. Choose your target environment from `platformio.ini`
-2. Set your board, vehicle mode, and initial dashboard credentials in `platformio_profile.h`
-3. Build the firmware
-4. Flash the board
-5. Connect to the dashboard if your target supports it
+2. Copy `platformio_profile.example.h` to `platformio_profile.h`
+3. Set your board, vehicle mode, and initial dashboard credentials in `platformio_profile.h`
+4. Build the firmware
+5. Flash the board
+6. Connect to the dashboard if your target supports it
 
 Example:
 
