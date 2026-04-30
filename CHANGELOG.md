@@ -7,16 +7,324 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.3.2-beta.3] - 2026-04-19
+### Added
+
+- ESP32 WiFi bridge mode: NAT forwarding between the upstream hotspot (STA) and the local access point (AP), so devices connected to the ESP32 AP get internet access through the upstream connection.
+- DNS filtering: optional DNS proxy on the AP interface with allowlist and blocklist modes, wildcard domain support (`*.example.com`), and per-domain rule editing from the web UI.
+- Network Bridge card in the web dashboard: toggles for bridge and DNS filter, mode selector, domain textarea with wildcard hints, and a live status/stats block.
+- `/bridge_status` and `/bridge_config` API endpoints for runtime configuration.
+- Bridge and DNS settings persisted in NVS and included in the settings backup/restore JSON (`bridge` key).
+- Safe fallback: local AP and dashboard remain reachable when the upstream connection is unavailable; NAT and DNS proxy disable automatically on STA disconnect.
+- Feature is ESP32-only (gated behind `ESP32_DASHBOARD`) and does not affect RP2040 or ATSAME51 targets.
+
+## [2.5.2] - 2026-04-29
+
+Stable release bundling the AP Injection Gate Smart Summon fixes from `2.5.2-beta.1` through `2.5.2-beta.6`.
+
+### Fixed
+
+- AP Injection Gate no longer drops during Smart Summon launches that report `DI_autonomyControlActive` while still in Park before an immediate turn. Definite Park frames now clear the summon latch only when ACA is inactive, so the earlier non-zero `UI_selfParkRequest` survives the shift out of Park even when no fresh request frame appears after the shift.
+
+## [2.5.2-beta.6] - 2026-04-29
+
+### Fixed
+
+- AP Injection Gate no longer drops during Smart Summon launches that report `DI_autonomyControlActive` while still in Park before an immediate turn. Definite Park frames now clear the summon latch only when ACA is inactive, so the earlier non-zero `UI_selfParkRequest` survives the shift out of Park even when no fresh request frame appears after the shift.
+
+## [2.5.2-beta.5] - 2026-04-28
+
+### Fixed
+
+- AP Injection Gate no longer stays open for 3-5 s after Autopilot is disengaged, and no longer treats plain TACC as an open-gate condition. `DI_autonomyControlActive` (ACA) on CAN 280 is set during AP, TACC, *and* Smart Summon, so it cannot drive Summoning by itself. Summoning now requires both `ACA=1` *and* a `UI_selfParkRequest` non-zero command observed in the current autonomy episode. ACA falling edge resets the spr-seen flag, so a subsequent TACC engagement does not re-latch the gate. The 5 s ACA-only timeout is removed: AP disengage drops ACA immediately and the gate closes immediately, restoring instant AP / TACC re-engagement.
+
+## [2.5.2-beta.4] - 2026-04-28
+
+### Fixed
+
+- AP Injection Gate now opens on a freshly-booted module when the car is asleep / locked with Sentry. While the DI is asleep, CAN ID 280 (`DI_systemStatus`) is not broadcast at all (only DAS / autopilot ECU IDs 921/1016/1021/2047 keep transmitting), so the previous boot-time `Parked=false` default left the gate stuck at `Waiting AP` until the driver pressed the brake to wake the DI. `Parked` now defaults to `true` at boot; the first `DI_systemStatus` frame with a driving gear (R/N/D) flips it to false. If the DI never reports, the car is asleep / parked and the gate remains open by design.
+
+## [2.5.2-beta.3] - 2026-04-28
+
+### Fixed
+
+- AP Injection Gate now stays open for the full duration of a Smart Summon / Smart Park session. Detection now uses `DI_autonomyControlActive` (CAN ID 280, bit 50 / byte 6 bit 2) as the primary "summon active" signal in addition to `UI_selfParkRequest` on CAN 1016. The DI bit is held high for the entire time the car is being driven by an autonomy stack, so the 5 s spr-only timeout no longer expires mid-summon when the UI command pulse drops to 0 while the car keeps driving itself.
+
+## [2.5.2-beta.2] - 2026-04-28
+
+### Fixed
+
+- AP Injection Gate no longer drops while Summon shifts the vehicle to Reverse. `clearSummonOnPark()` now fires only on a definitive `DI_gear == 1 (P)` value, not on the permissive `isVehicleParked` set that also includes `0=INVALID` and `7=SNA`. SNA can blip during gear transitions (e.g. P->R under Summon control), and the previous logic would clear `Summoning` on that blip and close the gate mid-summon. Shift to Drive was unaffected because `selfParkRequest` stayed non-zero long enough to re-latch `Summoning`; Reverse was reaching gear faster than the latch could recover.
+
+## [2.5.2-beta.1] - 2026-04-28
+
+### Fixed
+
+- AP Injection Gate now opens while the car is asleep / locked with Sentry. `isVehicleParked` now treats `DI_gear` values `0=INVALID` and `7=SNA` as parked in addition to `1=P`. When the DI is asleep it reports SNA on CAN ID 280, which previously left `Parked=false` and kept the gate stuck at `Waiting AP` until the driver pressed the brake to wake the DI. Driving states (R=2, N=3, D=4) are still not parked, so the gate behavior on a moving car is unchanged.
+
+## [2.5.1] - 2026-04-28
+
+Stable release bundling all changes from 2.4.2 onwards (`2.5.0-beta.5` through `2.5.0-beta.12`). Notably, the `Start after AP` dashboard toggle now gates plugin injection on AP, Park, *and* Summon / Smart Park, which makes the firmware compatible with vehicles running Tesla software release **2026.14.3** and newer — these versions reject the always-on injection used by earlier dashboards, so the toggle must be enabled to keep injection working on those vehicles.
 
 ### Added
-- ESP32 WiFi bridge mode: NAT forwarding between the upstream hotspot (STA) and the local access point (AP), so devices connected to the ESP32 AP get internet access through the upstream connection
-- DNS filtering: optional DNS proxy on the AP interface with allowlist and blocklist modes, wildcard domain support (`*.example.com`), and per-domain rule editing from the web UI
-- Network Bridge card in the web dashboard: toggles for bridge and DNS filter, mode selector, domain textarea with wildcard hints, and a live status/stats block
-- `/bridge_status` and `/bridge_config` API endpoints for runtime configuration
-- Bridge and DNS settings persisted in NVS and included in the settings backup/restore JSON (`bridge` key)
-- Safe fallback: local AP and dashboard remain reachable when the upstream connection is unavailable; NAT and DNS proxy disable automatically on STA disconnect
-- Feature is ESP32-only (gated behind `ESP32_DASHBOARD`) and does not affect RP2040 or ATSAME51 targets
+
+- Dashboard speed profiles now include an `Auto` mode. Auto follows the vehicle follow-distance selection, while a manual dashboard profile stays locked and is injected instead of being overwritten by the car.
+
+### Fixed
+
+- Legacy speed profile selection is now written back into outgoing CAN ID `1006` mux `0` frames so the selected profile actually takes effect on vehicle behavior instead of only changing the observed internal state. (rolled up from 2.4.2-beta.1)
+- AP Injection Gate now detects active AP from recorded HW3 `1021` mux `0` frames by reading the observed AD bit, so plugin injection no longer stays stuck at `Waiting AP` after Autopilot is engaged.
+- AP Injection Gate now waits for DAS `AutopilotStatus` active states instead of the 1021 UI/config bit, preventing plugin injection from switching to Active when AP is not engaged.
+- OTA update finalize now passes `true` to `Update.end()` to force completion regardless of residual byte count, fixing the `Update finalize failed` error that could occur after a successful download via GitHub S3 redirects.
+- OTA error paths now log `Update.errorString()` at every failure point (begin, write, finalize) so the root cause is visible in the dashboard log instead of a generic message.
+- AP Injection Gate now also opens while the vehicle is in Park, so Summon unlock injection can run while parked and stops again after shifting to Drive.
+- Dashboard manual profile selection now persists in firmware state and is applied to Legacy, HW3, and HW4 injection paths.
+- AP Injection Gate park detection now also reads `DI_systemStatus` (CAN ID 280) `DI_gear`, so the gate reopens when the vehicle is shifted to Park on Chassis-bus connections that do not carry `DIF_torque`/`DIR_torque` (CAN ID 390). MCP2515 hardware filter slots updated for Legacy, HW3, and HW4 modes to admit ID 280.
+- AP Injection Gate now also stays open while Summon / Smart Park is active. HW3 and HW4 handlers parse `UI_driverAssistControl` (CAN ID 1016) `UI_selfParkRequest` (byte 3 bits 4-7); when the request is non-zero (4=PRIME, 5=PAUSE, 7/8=AUTO_SUMMON_FWD/REV, 11=SMART_SUMMON), `Summoning` is asserted and held for 5 s after the last activity, so injection keeps running once the vehicle shifts out of Park into Drive/Reverse under Summon control.
+- AP Injection Gate `Summoning` flag is force-cleared whenever the vehicle returns to Park, so a manual P->D shift after a completed summon correctly waits for AP again instead of latching the gate open until reboot.
+
+## [2.5.0-beta.12] - 2026-04-27
+
+### Fixed
+
+- AP Injection Gate Summon detection no longer latches `Summoning` permanently after the first summon use. `UI_summonHeartbeat` is no longer used for activity tracking because it keeps cycling 0..3 indefinitely once summon has run, which prevented the gate from ever closing again. Detection now relies solely on `UI_selfParkRequest` (CAN 1016, byte 3 bits 4-7); the flag holds for 5 s after the last non-zero command and is also force-cleared whenever the vehicle returns to Park, so a manual P->D shift after a completed summon correctly waits for AP again.
+
+## [2.5.0-beta.11] - 2026-04-27
+
+### Fixed
+
+- AP Injection Gate now also stays open while Summon / Smart Park is active. HW3 and HW4 handlers parse `UI_driverAssistControl` (CAN ID 1016) `UI_summonHeartbeat` (byte 0 bits 2-3) and `UI_selfParkRequest` (byte 3 bits 4-7); when either is non-zero, `Summoning` is asserted and held for 1500 ms after the last activity, so injection keeps running once the vehicle shifts out of Park into Drive/Reverse under Summon control.
+
+## [2.5.0-beta.10] - 2026-04-27
+
+### Fixed
+
+- AP Injection Gate park detection now also reads `DI_systemStatus` (CAN ID 280) `DI_gear`, so the "Start after AP" gate reopens when the vehicle is shifted to Park on Chassis-bus connections that do not carry `DIF_torque`/`DIR_torque` (CAN ID 390). MCP2515 hardware filter slots updated for Legacy, HW3, and HW4 modes to admit ID 280.
+
+## [2.5.0-beta.9] - 2026-04-27
+
+### Added
+
+- Dashboard speed profiles now include an `Auto` mode. Auto follows the vehicle follow-distance selection, while a manual dashboard profile stays locked and is injected instead of being overwritten by the car.
+
+### Fixed
+
+- Dashboard manual profile selection now persists in firmware state and is applied to Legacy, HW3, and HW4 injection paths.
+
+## [2.5.0-beta.8] - 2026-04-27
+
+### Fixed
+
+- AP Injection Gate now also opens while the vehicle is in Park, so Summon unlock injection can run while parked and stops again after shifting to Drive.
+
+## [2.5.0-beta.7] - 2026-04-25
+
+### Fixed
+
+- OTA update finalize now passes `true` to `Update.end()` to force completion regardless of residual byte count, fixing the `Update finalize failed` error that could occur after a successful download via GitHub S3 redirects.
+- OTA error paths now log `Update.errorString()` at every failure point (begin, write, finalize) so the root cause is visible in the dashboard log instead of a generic message.
+
+## [2.5.0-beta.6] - 2026-04-24
+
+### Fixed
+
+- AP Injection Gate now waits for DAS `AutopilotStatus` active states instead of the 1021 UI/config bit, preventing plugin injection from switching to Active when AP is not engaged.
+
+## [2.5.0-beta.5] - 2026-04-24
+
+### Fixed
+
+- AP Injection Gate now detects active AP from recorded HW3 `1021` mux `0` frames by reading the observed AD bit, so plugin injection no longer stays stuck at `Waiting AP` after Autopilot is engaged.
+
+## [2.5.0] - 2026-04-24
+
+First stable release of the 2.5 series. Bundles all changes from 2.5.0-beta.1 through 2.5.0-beta.4.
+
+### Added
+
+- Dashboard configuration now includes a GTW 2047 plugin replay control, and settings backup/import now preserves plugin replay preferences.
+- Dashboard configuration now includes an AP Injection Gate toggle that arms plugin injection but waits until AP/NoA is observed active before sending plugin frames.
+- Plugin rules now support `counter` fields and `emit_periodic` for cached GTW mux 3 broadcasts, including editor support and updated plugin documentation.
+- Plugin rules now support a `bus` field (`CH`, `VEH`, `PARTY`, comma-separated string, bitmask, or array) to restrict matching to specific CAN bus pins; frames with unknown bus still match for backwards compatibility.
+- Plugin rules now support a `mux_mask` field (alias `muxMask`) to control which bits of byte 0 are compared for mux matching; values 0-7 default to low-3-bit mask, values 8-255 default to full-byte mask, enabling low-nibble and full-byte DBC mux styles.
+- Plugin list API now includes `bus` and `mux_mask` per rule so the dashboard UI and support exports reflect full rule configuration.
+- Plugin editor gained bus and mux-mask input fields per rule, and the rule label, summary, and conflict panel now show bus pin and mux/mask.
+- GTW periodic emit can now optionally try to silence native gateway broadcasts through a UDS diagnostic sequence using extended session, SecurityAccess, `CommunicationControl`, and `TesterPresent`.
+- HW3 dashboard builds now expose an optional offset slew limiter for plugin-driven mux 2 offset changes.
+- Added the shared `INJECTION_AFTER_AP` build option for behaviour-option builds; `ENHANCED_AUTOPILOT` mux 1 injection now waits for AP to be active when this option is enabled.
+- Added a WiFi dashboard regression test that covers the WiFi settings UI, backend routes, status payload, and backup fields.
+- Added native PlatformIO test environments `native_plugin_engine` and `native_plugin_engine_custom_key` for running plugin engine unit tests without hardware.
+
+### Changed
+
+- Plugin rules now allow up to 16 operations per rule instead of 8.
+- `PLUGIN_FILTER_IDS_MAX` raised to 32 (was equal to `PLUGIN_RULES_MAX` = 16) and made overridable at build time.
+- Replayed GTW frames, periodic emits, and repeated Rule Test sends now advance counter fields and refresh checksums between sends.
+- Dashboard plugin details, validation, support exports, and docs now describe the new replay, counter, and periodic emit behavior.
+- `gtw_silent: true` is now silently treated as disabled at parse time unless `PLUGIN_GTW_UDS_CUSTOM_KEY` is defined at build time; the periodic emit still works but no UDS sequence is started and `0x684`/`0x685` filter IDs are not injected.
+- UDS request frames sent by the GTW silencing state machine are now tagged with the bus of the frame that seeded the periodic emit cache.
+- Incoming frames with `CAN_BUS_ANY` are now normalized to `CAN_BUS_DEFAULT` in the main app loop before being passed to the plugin engine.
+- Plugin rule mux matching and test-rule matching refactored into shared `pluginRuleMatchesBus` / `pluginRuleMatchesMux` helpers used by both the engine and the dashboard.
+- Plugin editor mux input range extended to -1-255 (was -1-7) to support full-byte DBC mux values.
+
+### Fixed
+
+- GTW silent-mode plugin rules now add the required UDS request/response CAN IDs to the active filter set so the diagnostic state machine can observe replies.
+- The CAN analyzer now labels UDS `0x28 CommunicationControl` requests by name.
+- WiFi Internet status now follows the live STA connection state reliably after connect attempts and page refreshes instead of getting stuck on `Connecting to ...` or `Not configured`.
+- Corrupted WiFi SSID fragments are now ignored in saved settings and filtered from `/wifi_status` responses.
+- The WiFi settings form no longer overwrites the SSID field while it is being edited, and the status header no longer depends on optional labels being present.
+- Dashboard CAN sniffer and recorder buffers now clamp incoming frame DLC before copying frame data.
+- Plugin mux matching now ignores zero-DLC frames instead of treating them as mux 0.
+- Plugin conflict detection and detail panel now correctly account for bus mask and mux mask when determining whether two rules can affect the same frame.
+- Custom-key plugin engine native tests now validate output against the configured `PLUGIN_GTW_UDS_KEY_READY` value instead of a hard-coded key byte.
+
+## [2.5.0-beta.4] - 2026-04-24
+
+### Added
+
+- Dashboard configuration now includes an AP Injection Gate toggle that arms plugin injection but waits until AP/NoA is observed active before sending plugin frames.
+- Added the shared `INJECTION_AFTER_AP` build option for behaviour-option builds; `ENHANCED_AUTOPILOT` mux 1 injection now waits for AP to be active when this option is enabled.
+
+### Fixed
+
+- Custom-key plugin engine native tests now validate output against the configured `PLUGIN_GTW_UDS_KEY_READY` value instead of a hard-coded key byte.
+
+## [2.5.0-beta.3] - 2026-04-24
+
+### Added
+
+- Plugin rules now support a `bus` field (`CH`, `VEH`, `PARTY`, comma-separated string, bitmask, or array) to restrict matching to specific CAN bus pins; frames with unknown bus still match for backwards compatibility.
+- Plugin rules now support a `mux_mask` field (alias `muxMask`) to control which bits of byte 0 are compared for mux matching; values 0–7 default to low-3-bit mask, values 8–255 default to full-byte mask, enabling low-nibble and full-byte DBC mux styles.
+- Plugin list API now includes `bus` and `mux_mask` per rule so the dashboard UI and support exports reflect full rule configuration.
+- Plugin editor gained bus and mux-mask input fields per rule, and the rule label, summary, and conflict panel now show bus pin and mux/mask.
+- `PLUGIN_FILTER_IDS_MAX` raised to 32 (was equal to `PLUGIN_RULES_MAX` = 16) and made overridable at build time.
+- Added native PlatformIO test environments `native_plugin_engine` and `native_plugin_engine_custom_key` for running plugin engine unit tests without hardware.
+
+### Changed
+
+- `gtw_silent: true` is now silently treated as disabled at parse time unless `PLUGIN_GTW_UDS_CUSTOM_KEY` is defined at build time; the periodic emit still works but no UDS sequence is started and `0x684`/`0x685` filter IDs are not injected.
+- UDS request frames sent by the GTW silencing state machine are now tagged with the bus of the frame that seeded the periodic emit cache.
+- Incoming frames with `CAN_BUS_ANY` are now normalized to `CAN_BUS_DEFAULT` in the main app loop before being passed to the plugin engine.
+- Plugin rule mux matching and test-rule matching refactored into shared `pluginRuleMatchesBus` / `pluginRuleMatchesMux` helpers used by both the engine and the dashboard.
+- Plugin editor mux input range extended to −1–255 (was −1–7) to support full-byte DBC mux values.
+
+### Fixed
+
+- Plugin conflict detection and detail panel now correctly account for bus mask and mux mask when determining whether two rules can affect the same frame.
+
+## [2.5.0-beta.2] - 2026-04-24
+
+### Fixed
+- Dashboard CAN sniffer and recorder buffers now clamp incoming frame DLC before copying frame data.
+- Plugin mux matching now ignores zero-DLC frames instead of treating them as mux 0.
+
+## [2.5.0-beta.1] - 2026-04-23
+
+### Added
+- Dashboard configuration now includes a GTW 2047 plugin replay control, and settings backup/import now preserves plugin replay preferences.
+- Plugin rules now support `counter` fields and `emit_periodic` for cached GTW mux 3 broadcasts, including editor support and updated plugin documentation.
+- GTW periodic emit can now optionally try to silence native gateway broadcasts through a UDS diagnostic sequence using extended session, SecurityAccess, `CommunicationControl`, and `TesterPresent`.
+- HW3 dashboard builds now expose an optional offset slew limiter for plugin-driven mux 2 offset changes.
+- Added a WiFi dashboard regression test that covers the WiFi settings UI, backend routes, status payload, and backup fields.
+
+### Changed
+- Plugin rules now allow up to 16 operations per rule instead of 8.
+- Replayed GTW frames, periodic emits, and repeated Rule Test sends now advance counter fields and refresh checksums between sends.
+- Dashboard plugin details, validation, support exports, and docs now describe the new replay, counter, and periodic emit behavior.
+
+### Fixed
+- GTW silent-mode plugin rules now add the required UDS request/response CAN IDs to the active filter set so the diagnostic state machine can observe replies.
+- The CAN analyzer now labels UDS `0x28 CommunicationControl` requests by name.
+- WiFi Internet status now follows the live STA connection state reliably after connect attempts and page refreshes instead of getting stuck on `Connecting to ...` or `Not configured`.
+- Corrupted WiFi SSID fragments are now ignored in saved settings and filtered from `/wifi_status` responses.
+- The WiFi settings form no longer overwrites the SSID field while it is being edited, and the status header no longer depends on optional labels being present.
+
+## [2.4.2-beta.1] - 2026-04-23
+
+### Fixed
+- Legacy speed profile selection is now written back into outgoing CAN ID `1006` mux `0` frames so the selected profile actually takes effect on vehicle behavior instead of only changing the observed internal state.
+- Added a native Legacy regression test that verifies the selected speed profile bits are injected into the transmitted mux `0` frame.
+
+## [2.4.1] - 2026-04-22
+
+### Added
+- Dashboard header now shows the latest observed `GTW_autopilot` state next to the selected hardware mode.
+- Native dashboard regression tests now assert that dashboard handlers do not send frames, increment `framesSent`, or fire `onSend`.
+- README and dashboard footer now include the support and gift information from `main`.
+
+### Changed
+- Dashboard builds no longer compile automatic CAN injection paths from Legacy, HW3, or HW4 handlers; enabled plugins are the automatic injection path.
+- HW3 no longer listens for or injects Track Mode request frames.
+- ESP32 dashboard builds now use a 4MB OTA partition layout with larger app slots while preserving SPIFFS storage.
+- Plugin documentation now describes the dashboard's plugin-only automatic injection behavior instead of firmware overlap warnings.
+- Rule Test count and interval controls now use visible labels with `1` and `100` as placeholders, while empty fields still default to one injection every 100 ms.
+- Support issue flow now copies the dashboard support report to the clipboard and opens the General Issue form without prefilled title or body text.
+
+### Fixed
+- ESP32 dashboard hotspot startup is more reliable by starting the AP earlier, disabling WiFi sleep, validating saved AP/STA credentials, and falling back to AP-only mode when STA connection attempts time out.
+
+## [2.4.1-beta.3] - 2026-04-22
+
+### Fixed
+- ESP32 dashboard hotspot startup is more reliable by starting the AP earlier, disabling WiFi sleep, validating saved AP/STA credentials, and falling back to AP-only mode when STA connection attempts time out.
+
+## [2.4.1-beta.2] - 2026-04-20
+
+### Changed
+- Rule Test count and interval controls now use visible labels with `1` and `100` as placeholders, while empty fields still default to one injection every 100 ms.
+- Support issue flow now copies the dashboard support report to the clipboard and opens the General Issue form without prefilled title or body text.
+
+## [2.4.1-beta.1] - 2026-04-20
+
+### Added
+- Dashboard header now shows the latest observed `GTW_autopilot` state next to the selected hardware mode.
+- Native dashboard regression tests now assert that dashboard handlers do not send frames, increment `framesSent`, or fire `onSend`.
+
+### Changed
+- Dashboard builds no longer compile automatic CAN injection paths from Legacy, HW3, or HW4 handlers; enabled plugins are the automatic injection path.
+- HW3 no longer listens for or injects Track Mode request frames.
+- ESP32 dashboard builds now use a 4MB OTA partition layout with larger app slots while preserving SPIFFS storage.
+- Plugin documentation now describes the dashboard's plugin-only automatic injection behavior instead of firmware overlap warnings.
+
+## [2.4.0] - 2026-04-19
+
+## [2.4.0-beta.1] - 2026-04-19
+
+### Added
+- Dashboard plugin priority controls now let users choose which enabled plugin wins overlapping bit writes
+- Dashboard plugin conflict warnings now show firmware overlaps, plugin priority overlaps, and the first enabled injection priority
+
+### Changed
+- Plugin installs now start disabled so users can review priority and conflicts before enabling them
+- Rule Test now waits for the next matching live CAN frame, applies the selected rule to that frame, and injects the captured result with the chosen count and interval
+- Dashboard polling now keeps `/status` as the connection gate and backs off non-critical polls during reconnects
+
+### Fixed
+- Plugin rules targeting the same CAN ID and mux are merged into one injected frame per incoming frame, preventing contradictory duplicate plugin sends in the same cycle
+- TWAI dashboard filtering now drops sparse-mask false positives in software, reducing dashboard load when plugin CAN IDs widen the hardware mask
+- Dashboard status rendering no longer breaks when optional status-grid elements are removed or rearranged
+- Dashboard remains responsive under heavier CAN/plugin load by limiting per-loop frame draining and giving the web task more scheduling priority
+
+## [2.3.2-beta.2] - 2026-04-18
+
+### Changed
+- Dashboard no longer exposes or persists speed profile control; follow distance and the derived profile remain visible as read-only status
+- Dashboard profile-related boot logging and legacy NVS cleanup now reflect the new plugin-managed model without stale `SP` or profile-lock state
+
+### Fixed
+- Dashboard core no longer injects speed profile or speed offset back onto CAN for Legacy, HW3, or HW4 handlers; those values are now observational unless a plugin explicitly modifies those frames
+- Dashboard plugin toggles now apply immediately and batch their persistence, avoiding repeated Wi-Fi stalls while enabling or disabling multiple plugins
+
+## [2.3.2-beta.1] - 2026-04-18
+
+### Changed
+- Dashboard builds now ignore all `BEHAVIOUR OPTIONS` from `platformio_profile.h`; these overrides are plugin-managed and are no longer compiled into firmware when `ESP32_DASHBOARD` is enabled
+
+### Fixed
+- Dashboard injection stop now also blocks plugin-based frame injection instead of letting enabled plugins keep sending
+- TWAI dashboard profile syncing no longer forces commented-out behavior options into the build
+- Dashboard boot/runtime state no longer reports legacy built-in ISA, emergency vehicle detection, TLSSC bypass, or nag handling as active in plugin-managed builds
+- Plugin cards no longer show the obsolete built-in conflict warning badge and message
 
 ## [2.3.1] - 2026-04-18
 
