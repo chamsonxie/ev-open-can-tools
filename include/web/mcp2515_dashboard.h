@@ -629,6 +629,13 @@ static void dashClearLegacyOptionPrefs()
         dashLog("[BOOT] Cleared legacy dashboard prefs from NVS");
 }
 
+// Forward declarations for the WiFi-bridge / DNS-filter helpers. The header
+// is included later (after the WebServer global is defined); these decls
+// let dashLoadPrefs / dashCheckWifi / mcpDashboardSetup call into it.
+static void bridgeLoadPrefsInline();
+static void bridgeApplyState();
+static void bridgeBootApply();
+
 static void dashLoadPrefs()
 {
     prefs.begin(PREFS_NS, false);
@@ -717,6 +724,7 @@ static void dashLoadPrefs()
 
     updateBetaChannel = prefs.getBool("update_beta", false);
     autoUpdateEnabled = prefs.getBool("auto_upd", false);
+    bridgeLoadPrefsInline();
     prefs.end();
 
     if (migratedHw)
@@ -1904,12 +1912,14 @@ static void dashCheckWifi()
             // Schedule auto-update check 15 s after STA comes up (grace period for other boot work)
             if (autoUpdateEnabled && !autoUpdateDone)
                 autoUpdateEligibleAt = millis() + 15000;
+            bridgeApplyState();
         }
         else
         {
             dashLog("[WIFI] Disconnected from " + String(staSSID));
             staConnectAttemptActive = false;
             staRetryAt = now + kDashStaRetryMs;
+            bridgeApplyState();
         }
     }
 
@@ -1920,6 +1930,7 @@ static void dashCheckWifi()
         dashStartAccessPoint(false);
         staRetryAt = now + kDashStaRetryMs;
         dashLog("[WIFI] STA connect timed out; keeping AP-only mode");
+        bridgeApplyState();
     }
 
     // Fire one-shot auto-update check once eligible
@@ -2029,6 +2040,9 @@ static void handleWifiStatus()
     j += "}";
     server.send(200, "application/json", j);
 }
+
+// ── WiFi Bridge + DNS filter (issue #30) ────────────────────────
+#include "web/wifi_bridge.h"
 
 // ── AP Config (hotspot name/password) ───────────────────────────
 
@@ -2162,6 +2176,21 @@ static void handleSettingsExport()
     j += ",\"hw3\":{\"offsetSlew\":" + String(h3Slew ? "true" : "false") + ",\"slewRate\":" + String(h3SlewRate) + "}";
     j += ",\"can\":{\"tx\":" + String(canTx) + ",\"rx\":" + String(canRx) + "}";
     j += ",\"beta\":" + String(beta ? "true" : "false");
+    {
+        Preferences bp;
+        if (bp.begin(PREFS_NS, true))
+        {
+            bool brEn = bp.getBool("bridge_en", false);
+            bool dnsEn = bp.getBool("dns_flt_en", false);
+            uint8_t dnsM = bp.getUChar("dns_mode", 0);
+            String dnsR = bp.isKey("dns_rules") ? bp.getString("dns_rules", "[]") : "[]";
+            bp.end();
+            j += ",\"bridge\":{\"bridge_en\":" + String(brEn ? "true" : "false");
+            j += ",\"dns_flt_en\":" + String(dnsEn ? "true" : "false");
+            j += ",\"dns_mode\":" + String(dnsM);
+            j += ",\"dns_rules\":" + dnsR + "}";
+        }
+    }
     j += "}";
 
     server.sendHeader("Content-Disposition", "attachment; filename=\"evtools-backup.json\"");
@@ -2222,6 +2251,23 @@ static void handleSettingsImport()
     }
     if (doc["beta"].is<bool>())
         p.putBool("upd_beta", doc["beta"].as<bool>());
+    if (doc["bridge"].is<JsonObject>())
+    {
+        auto br = doc["bridge"];
+        if (br["bridge_en"].is<bool>())
+            p.putBool("bridge_en", br["bridge_en"].as<bool>());
+        if (br["dns_flt_en"].is<bool>())
+            p.putBool("dns_flt_en", br["dns_flt_en"].as<bool>());
+        if (br["dns_mode"].is<int>())
+            p.putUChar("dns_mode", (uint8_t)(br["dns_mode"].as<int>() == 1 ? 1 : 0));
+        if (br["dns_rules"].is<JsonArray>())
+        {
+            String rulesOut;
+            serializeJson(br["dns_rules"], rulesOut);
+            if (rulesOut.length() <= kBridgeDnsRulesJsonMax)
+                p.putString("dns_rules", rulesOut);
+        }
+    }
     if (doc["plugins"].is<JsonObject>() && doc["plugins"]["replay"].is<int>())
         p.putUChar("plg_rep", pluginClampReplayCount(doc["plugins"]["replay"].as<int>()));
     if (doc["plugins"].is<JsonObject>() && doc["plugins"]["startAfterAp"].is<bool>())
@@ -2965,6 +3011,8 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/wifi_scan", HTTP_GET, handleWifiScan);
     server.on("/wifi_config", HTTP_POST, handleWifiConfig);
     server.on("/wifi_status", HTTP_GET, handleWifiStatus);
+    server.on("/bridge_status", HTTP_GET, handleBridgeStatus);
+    server.on("/bridge_config", HTTP_POST, handleBridgeConfig);
     server.on("/update_check", HTTP_GET, handleUpdateCheck);
     server.on("/update_install", HTTP_POST, handleUpdateInstall);
     server.on("/update_beta", HTTP_POST, handleUpdateBeta);
@@ -2974,6 +3022,7 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.begin();
     if (strlen(staSSID) > 0)
         dashScheduleSTAConnect(kDashStaBootDelayMs);
+    bridgeBootApply();
     xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, 2, nullptr, 0);
     Serial.println("[WEB] Dashboard: http://" + WiFi.softAPIP().toString());
     dashLog("[BOOT] ev-open-can-tools ready");

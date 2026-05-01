@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **WiFi uplink bridge with DNS allow/blocklist (issue #30).** ESP32 dashboard builds can now act as a NAT bridge between AP-side clients and an upstream WiFi connection, with an optional DNS proxy that filters queries by allowlist or blocklist. New Network Bridge subsection in Configuration exposes both toggles plus rule editing (one domain per line, `*.example.com` wildcards, max 50 entries) and live counters (queries / blocked / failed). Bridge state survives reboots via NVS and is included in settings export/import. The DHCP server is reconfigured to advertise the local AP IP as the DNS server (option 6) when the filter is active, so clients actually query the proxy instead of bypassing it via their cached resolver. NAT forwarding requires `lwip_napt` in the SDK build (gracefully reports "unsupported" otherwise); the dashboard remains reachable on the local AP whether or not the upstream link is connected.
+
 ## [2.5.2] - 2026-04-29
 
 Stable release bundling the AP Injection Gate Smart Summon fixes from `2.5.2-beta.1` through `2.5.2-beta.6`.
