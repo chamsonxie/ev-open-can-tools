@@ -8,6 +8,16 @@ At a basic level, the firmware sits on the vehicle CAN bus, watches selected fra
 
 For most people, the easiest way to use this project is with an ESP32 dashboard build. That gives you a local web interface for setup, WiFi, plugins, updates, diagnostics, and basic runtime control.
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=ev-open-can-tools%2Fev-open-can-tools&type=timeline&logscale=&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=ev-open-can-tools/ev-open-can-tools&type=timeline&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=ev-open-can-tools/ev-open-can-tools&type=timeline&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=ev-open-can-tools/ev-open-can-tools&type=timeline&legend=top-left" />
+ </picture>
+</a>
+
 ## Before You Start
 
 This project is **not** plug and play.
