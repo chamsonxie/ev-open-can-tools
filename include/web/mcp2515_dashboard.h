@@ -3361,6 +3361,9 @@ static void mcpDashboardLoop()
         canOnline = false;
         dashLog("[CAN] Bus OFFLINE (timeout)");
     }
+#if defined(DASH_RGB_STATUS_LED)
+    appRefreshStatusLed(false);
+#endif
 }
 
 #endif

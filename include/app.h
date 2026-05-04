@@ -96,16 +96,45 @@ static void appRefreshStatusLed(bool force)
 {
     static bool known = false;
     static bool lastInjecting = false;
+    static bool lastConnected = false;
+    static bool lastOta = false;
     static uint8_t lastLevel = 0;
+    static bool lastEmittedOn = true;
 
     bool injecting = canActive;
+    bool connected = (WiFi.softAPgetStationNum() > 0) || (WiFi.status() == WL_CONNECTED);
+    bool ota = Update.isRunning();
     uint8_t level = dashLedBrightness;
-    if (!force && known && lastInjecting == injecting && lastLevel == level)
+
+    // Solid when connected (or OTA), 1 Hz blink otherwise.
+    bool blinkOn = (millis() % 1000UL) < 500UL;
+    bool emittedOn = (connected || ota) ? true : blinkOn;
+
+    if (!force && known
+        && lastInjecting == injecting
+        && lastConnected == connected
+        && lastOta == ota
+        && lastLevel == level
+        && lastEmittedOn == emittedOn)
         return;
 
-    appWriteStatusLed(injecting ? 0 : level, injecting ? level : 0, 0);
+    uint8_t r = 0, g = 0, b = 0;
+    if (emittedOn)
+    {
+        if (ota)
+            b = level;          // OTA: solid blue
+        else if (injecting)
+            g = level;
+        else
+            r = level;
+    }
+    appWriteStatusLed(r, g, b);
+
     lastInjecting = injecting;
+    lastConnected = connected;
+    lastOta = ota;
     lastLevel = level;
+    lastEmittedOn = emittedOn;
     known = true;
 }
 #endif
@@ -180,6 +209,9 @@ static void appSetup(std::unique_ptr<Driver> drv, const char *readyMsg)
 template <typename Driver>
 static void appLoop()
 {
+#if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD) && defined(DASH_RGB_STATUS_LED)
+    appRefreshStatusLed(false);
+#endif
 #if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD)
     if (Update.isRunning())
     {
