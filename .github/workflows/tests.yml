@@ -34,8 +34,10 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends
           clang-format git
       - run: clang-format --version
-      - run: git ls-files '*.cpp' '*.h' '*.hpp' | xargs -r clang-format --dry-run
-          --Werror --style=file
+      - run: |
+          git ls-files '*.cpp' '*.h' '*.hpp' \
+            ':!:include/web/mcp2515_dashboard_ui.h' \
+            | xargs -r clang-format --dry-run --Werror --style=file
 
   python-tests:
     runs-on: ubuntu-latest
@@ -44,7 +46,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.x"
-      - run: python test/test_can_analyzer.py
+      - run: python -m unittest discover -s test -p 'test_*.py'
 
   native-tests:
     runs-on: ubuntu-latest
@@ -53,9 +55,14 @@ jobs:
       matrix:
         env:
           - native
+          - native_dashboard
           - native_bypass_tlssc_requirement
           - native_log_buffer
+          - native_mcp2515_recovery
           - native_nag
+          - native_injection_after_ap
+          - native_plugin_engine
+          - native_plugin_engine_custom_key
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -75,31 +82,53 @@ jobs:
           - env: feather_rp2040_can
             profile: --driver DRIVER_MCP2515 --vehicle HW3 --enable
               EMERGENCY_VEHICLE_DETECTION
+            project_dir: legacy-arduino
             extra_python_packages: ""
           - env: feather_m4_can
             profile: --driver DRIVER_SAME51 --vehicle HW4 --enable
               EMERGENCY_VEHICLE_DETECTION --enable ENHANCED_AUTOPILOT
+            project_dir: legacy-arduino
             extra_python_packages: ""
           - env: esp32_twai
             profile: --driver DRIVER_TWAI --vehicle HW4 --enable EMERGENCY_VEHICLE_DETECTION
               --enable ENHANCED_AUTOPILOT
-            extra_python_packages: littlefs-python fatfs-ng pyyaml
+            project_dir: .
+            extra_python_packages: littlefs-python fatfs-ng pyyaml intelhex
+          - env: esp32s2_twai
+            profile: --driver DRIVER_TWAI --vehicle HW4 --enable EMERGENCY_VEHICLE_DETECTION
+              --enable ENHANCED_AUTOPILOT
+            project_dir: .
+            extra_python_packages: littlefs-python fatfs-ng pyyaml intelhex
+          - env: lilygo_tcan485_hw3
+            profile: --driver DRIVER_TWAI --vehicle HW3 --enable EMERGENCY_VEHICLE_DETECTION
+              --enable ENHANCED_AUTOPILOT
+            project_dir: .
+            extra_python_packages: littlefs-python fatfs-ng pyyaml intelhex
           - env: m5stack-atomic-can-base
             profile: --driver DRIVER_TWAI --vehicle HW4 --enable EMERGENCY_VEHICLE_DETECTION
               --enable ENHANCED_AUTOPILOT
-            extra_python_packages: littlefs-python fatfs-ng pyyaml
+            project_dir: .
+            extra_python_packages: littlefs-python fatfs-ng pyyaml intelhex
           - env: esp32_feather_v2_mcp2515
             profile: --driver DRIVER_ESP32_EXT_MCP2515 --vehicle HW4 --enable
               EMERGENCY_VEHICLE_DETECTION
-            extra_python_packages: littlefs-python fatfs-ng pyyaml
+            project_dir: .
+            extra_python_packages: littlefs-python fatfs-ng pyyaml intelhex
           - env: esp32_ext_mcp2515
             profile: --driver DRIVER_ESP32_EXT_MCP2515 --vehicle HW4 --enable
               EMERGENCY_VEHICLE_DETECTION --enable ENHANCED_AUTOPILOT
-            extra_python_packages: littlefs-python fatfs-ng pyyaml
+            project_dir: .
+            extra_python_packages: littlefs-python fatfs-ng pyyaml intelhex
           - env: m5stack-atoms3-mini-can-base
             profile: --driver DRIVER_TWAI --vehicle HW4 --enable EMERGENCY_VEHICLE_DETECTION
               --enable ENHANCED_AUTOPILOT
-            extra_python_packages: littlefs-python fatfs-ng pyyaml
+            project_dir: .
+            extra_python_packages: littlefs-python fatfs-ng pyyaml intelhex
+          - env: waveshare_ESP32_S3_RS485_CAN
+            profile: --driver DRIVER_TWAI --vehicle HW4 --enable EMERGENCY_VEHICLE_DETECTION
+              --enable ENHANCED_AUTOPILOT
+            project_dir: .
+            extra_python_packages: littlefs-python fatfs-ng pyyaml intelhex
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -113,5 +142,6 @@ jobs:
       - run: cp platformio_profile.example.h platformio_profile.h
       - run: python scripts/platformio_set_profile.py ${{ matrix.profile }}
       - run: pio run -e ${{ matrix.env }}
+        working-directory: ${{ matrix.project_dir }}
         env:
           SKIP_DASH_CREDENTIAL_CHECK: "1"

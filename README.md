@@ -85,7 +85,7 @@ This is the easiest and most user-friendly setup path in the project.
 | `esp32_ext_mcp2515` | ESP32-S3 + external MCP2515 | SPI MCP2515 | Yes |
 | `waveshare_ESP32_S3_RS485_CAN` | Waveshare ESP32-S3 RS485/CAN | TWAI | Yes |
 
-ESP32 dashboard builds are the full-featured path. They use ESP-IDF and include the web UI, plugin engine, WiFi, OTA, and persistent runtime settings.
+ESP32 dashboard builds are the full-featured path. They use pinned ESP-IDF v6.0.1 through PlatformIO and include the web UI, plugin engine, WiFi, OTA, and persistent runtime settings.
 
 Arduino-only boards that cannot use ESP-IDF live in [`legacy-arduino/`](legacy-arduino/):
 

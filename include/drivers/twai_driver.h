@@ -2,7 +2,10 @@
 
 #include "../can_frame_types.h"
 #include "can_driver.h"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcpp"
 #include <driver/twai.h>
+#pragma GCC diagnostic pop
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 

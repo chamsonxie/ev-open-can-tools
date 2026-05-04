@@ -158,8 +158,8 @@ struct DashWifiNetwork
 };
 static DashWifiNetwork wifiNetworks[kDashMaxWifiNetworks] = {};
 static uint8_t wifiNetworkCount = 0;
-static int8_t wifiActiveSlot = -1;     // slot currently selected for STA attempt
-static int8_t wifiNextRotateSlot = 0;  // next slot to try when rotating
+static int8_t wifiActiveSlot = -1;    // slot currently selected for STA attempt
+static int8_t wifiNextRotateSlot = 0; // next slot to try when rotating
 static bool updateBetaChannel = false;
 static bool autoUpdateEnabled = false;
 static bool autoUpdateDone = false;            // one-shot per boot
@@ -182,7 +182,7 @@ static String dashWifiKey(uint8_t slot, const char *sub)
     k += sub;
     return k;
 }
-static bool dashWifiNetworkValid(const DashWifiNetwork &n)
+[[maybe_unused]] static bool dashWifiNetworkValid(const DashWifiNetwork &n)
 {
     size_t sl = strlen(n.ssid);
     size_t pl = strlen(n.pass);
@@ -631,7 +631,7 @@ static void dashSetCanActive(bool active, const char *reason = nullptr)
     }
 }
 
-static void dashToggleCanActive(const char *reason = nullptr)
+[[maybe_unused]] static void dashToggleCanActive(const char *reason = nullptr)
 {
     dashSetCanActive(!canActive, reason);
 }
