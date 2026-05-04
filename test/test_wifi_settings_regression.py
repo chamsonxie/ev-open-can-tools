@@ -16,6 +16,10 @@ class WifiSettingsRegressionTests(unittest.TestCase):
         cls.dash = DASH_FILE.read_text(encoding="utf-8")
         cls.sync = SYNC_FILE.read_text(encoding="utf-8")
 
+    def assertHasUiId(self, element_id: str) -> None:
+        pattern = rf'\bid=(?:"{re.escape(element_id)}"|{re.escape(element_id)}\b)'
+        self.assertRegex(self.ui, pattern)
+
     def test_wifi_ui_has_all_expected_fields(self) -> None:
         required_ids = [
             "wifi-status",
@@ -32,7 +36,7 @@ class WifiSettingsRegressionTests(unittest.TestCase):
 
         for element_id in required_ids:
             with self.subTest(element_id=element_id):
-                self.assertIn(f'id="{element_id}"', self.ui)
+                self.assertHasUiId(element_id)
 
     def test_wifi_ui_scripts_reference_existing_elements(self) -> None:
         referenced_ids = {
@@ -40,11 +44,11 @@ class WifiSettingsRegressionTests(unittest.TestCase):
             for match in re.finditer(r"\$\('([^']+)'\)", self.ui)
             if match.group(1).startswith("wifi-")
         }
-        declared_ids = {
-            match.group(1)
-            for match in re.finditer(r'id="([^"]+)"', self.ui)
-            if match.group(1).startswith("wifi-")
-        }
+        declared_ids = set()
+        for match in re.finditer(r'\bid=(?:"([^"]+)"|([A-Za-z0-9_-]+))', self.ui):
+            element_id = match.group(1) or match.group(2)
+            if element_id.startswith("wifi-"):
+                declared_ids.add(element_id)
 
         missing = sorted(referenced_ids - declared_ids)
         self.assertEqual([], missing, f"Missing WiFi UI ids: {missing}")
@@ -106,11 +110,12 @@ class WifiSettingsRegressionTests(unittest.TestCase):
                 self.assertIn(field, self.dash)
 
     def test_ap_injection_gate_setting_is_persisted_and_exposed(self) -> None:
-        expected_ui_fields = [
-            'id="ap-gate-tgl"',
-            "saveApGate()",
-            "updateApGateControl(d)",
-        ]
+        expected_ui_ids = ["ap-gate-tgl"]
+        expected_ui_fields = ["saveApGate()", "updateApGateControl(d)"]
+
+        for element_id in expected_ui_ids:
+            with self.subTest(ui_id=element_id):
+                self.assertHasUiId(element_id)
         expected_backend_fields = [
             "INJECTION_AFTER_AP",
             '"ap_gate"',
