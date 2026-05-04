@@ -103,6 +103,9 @@ struct PluginRule
     uint32_t canId;
     int16_t mux; // -1 = match any mux
     uint8_t muxMask;
+    uint8_t matchByte;
+    uint8_t matchMask; // 0 = no byte match
+    uint8_t matchValue;
     uint8_t busMask;
     PluginOp ops[PLUGIN_OPS_MAX];
     uint8_t opCount;
@@ -514,6 +517,15 @@ static bool pluginRuleMatchesMux(const PluginRule &rule, const CanFrame &frame)
     return (frame.data[0] & mask) == (static_cast<uint8_t>(rule.mux) & mask);
 }
 
+static bool pluginRuleMatchesByte(const PluginRule &rule, const CanFrame &frame)
+{
+    if (rule.matchMask == 0)
+        return true;
+    if (rule.matchByte >= frame.dlc || rule.matchByte >= 8)
+        return false;
+    return (frame.data[rule.matchByte] & rule.matchMask) == (rule.matchValue & rule.matchMask);
+}
+
 static bool pluginRuleMuxIncludes(const PluginRule &rule, uint8_t mux)
 {
     if (rule.mux < 0)
@@ -562,6 +574,38 @@ static bool pluginParseJson(const String &json, PluginData &out)
         if (r.mux >= 0 && r.muxMask == 0)
             r.muxMask = pluginDefaultMuxMask(r.mux);
         r.busMask = pluginParseBus(rule["bus"]);
+        r.matchByte = 0;
+        r.matchMask = 0;
+        r.matchValue = 0;
+        JsonVariant match = rule["match"];
+        if (match.is<JsonObject>())
+        {
+            r.matchByte = match["byte"] | (uint8_t)0;
+            r.matchMask = match["mask"] | (uint8_t)0xFF;
+            JsonVariant matchValue = match["val"];
+            if (matchValue.isNull())
+                matchValue = match["value"];
+            r.matchValue = matchValue | (uint8_t)0;
+        }
+        JsonVariant matchByte = rule["match_byte"];
+        if (matchByte.isNull())
+            matchByte = rule["matchByte"];
+        JsonVariant matchMask = rule["match_mask"];
+        if (matchMask.isNull())
+            matchMask = rule["matchMask"];
+        JsonVariant matchValue = rule["match_val"];
+        if (matchValue.isNull())
+            matchValue = rule["match_value"];
+        if (matchValue.isNull())
+            matchValue = rule["matchValue"];
+        if (!matchByte.isNull())
+            r.matchByte = matchByte | (uint8_t)0;
+        if (!matchMask.isNull())
+            r.matchMask = matchMask | (uint8_t)0;
+        if (!matchValue.isNull())
+            r.matchValue = matchValue | (uint8_t)0;
+        if (r.matchByte > 7)
+            r.matchMask = 0;
         r.sendAfter = rule["send"] | true;
         r.opCount = 0;
 
@@ -1130,7 +1174,8 @@ static bool pluginProcessFrame(const CanFrame &original, CanDriver &driver)
             if (rule.canId != original.id)
                 continue;
 
-            if (!pluginRuleMatchesBus(rule, original) || !pluginRuleMatchesMux(rule, original))
+            if (!pluginRuleMatchesBus(rule, original) || !pluginRuleMatchesMux(rule, original) ||
+                !pluginRuleMatchesByte(rule, original))
                 continue;
 
             processed = true;

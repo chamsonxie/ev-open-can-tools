@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 UI_FILE = ROOT / "include" / "web" / "mcp2515_dashboard_ui.h"
 DASH_FILE = ROOT / "include" / "web" / "mcp2515_dashboard.h"
 SYNC_FILE = ROOT / "scripts" / "platformio_sync_profile.py"
+RUNTIME_FILE = ROOT / "src" / "espidf_runtime.cpp"
 
 
 class WifiSettingsRegressionTests(unittest.TestCase):
@@ -15,6 +16,7 @@ class WifiSettingsRegressionTests(unittest.TestCase):
         cls.ui = UI_FILE.read_text(encoding="utf-8")
         cls.dash = DASH_FILE.read_text(encoding="utf-8")
         cls.sync = SYNC_FILE.read_text(encoding="utf-8")
+        cls.runtime = RUNTIME_FILE.read_text(encoding="utf-8")
 
     def assertHasUiId(self, element_id: str) -> None:
         pattern = rf'\bid=(?:"{re.escape(element_id)}"|{re.escape(element_id)}\b)'
@@ -108,6 +110,31 @@ class WifiSettingsRegressionTests(unittest.TestCase):
         for field in expected_export_import_fields:
             with self.subTest(field=field):
                 self.assertIn(field, self.dash)
+
+    def test_wifi_config_defers_reconnect_until_after_response(self) -> None:
+        section = self.dash[
+            self.dash.index("static void handleWifiConfig()") :
+            self.dash.index("static void handleWifiDelete()")
+        ]
+
+        self.assertIn("dashPrepareStaReconnect();", section)
+        self.assertIn("dashScheduleSTAConnect(1000);", section)
+        self.assertNotIn("dashConnectSTA();", section)
+        success_send = 'server.send(200, "application/json", "{\\"ok\\":true,\\"idx\\":"'
+        self.assertLess(section.index(success_send), section.index("dashScheduleSTAConnect(1000);"))
+
+    def test_wifi_scan_prepares_sta_mode_before_scan(self) -> None:
+        section = self.dash[
+            self.dash.index("static void handleWifiScan()") :
+            self.dash.index("static void dashPersistWifiSlot")
+        ]
+
+        self.assertIn("dashPrepareWifiScan();", section)
+        self.assertLess(section.index("dashPrepareWifiScan();"), section.index("WiFi.scanNetworks"))
+
+    def test_espidf_wifi_logging_is_not_info_verbose(self) -> None:
+        self.assertIn('esp_log_level_set("wifi", ESP_LOG_WARN);', self.runtime)
+        self.assertIn('esp_log_level_set("httpd_txrx", ESP_LOG_ERROR);', self.runtime)
 
     def test_ap_injection_gate_setting_is_persisted_and_exposed(self) -> None:
         expected_ui_ids = ["ap-gate-tgl"]

@@ -140,6 +140,53 @@ void test_gtw_silent_is_disabled_without_custom_key()
     TEST_ASSERT_EQUAL_UINT32(2047, plugin.filterIds[0]);
 }
 
+void test_byte_match_gates_0x370_counter_duplicate_plugin()
+{
+    installPlugin(R"JSON({
+      "name":"370 duplicate",
+      "rules":[{
+        "id":880,
+        "match_byte":4,
+        "match_mask":192,
+        "match_val":0,
+        "ops":[
+          {"type":"set_byte","byte":3,"val":182},
+          {"type":"set_bit","bit":38,"val":1},
+          {"type":"counter","byte":6,"mask":15,"step":1},
+          {"type":"checksum"}
+        ]
+      }]
+    })JSON");
+
+    MockDriver driver;
+    CanFrame frame = {.id = 880};
+    frame.data[0] = 0x10;
+    frame.data[1] = 0x20;
+    frame.data[2] = 0x30;
+    frame.data[3] = 0x40;
+    frame.data[4] = 0x01;
+    frame.data[5] = 0x50;
+    frame.data[6] = 0x2F;
+    frame.data[7] = 0x00;
+
+    TEST_ASSERT_TRUE(pluginProcessFrame(frame, driver));
+    TEST_ASSERT_EQUAL_size_t(1, driver.sent.size());
+    TEST_ASSERT_EQUAL_UINT32(880, driver.sent[0].id);
+    TEST_ASSERT_EQUAL_HEX8(0xB6, driver.sent[0].data[3]);
+    TEST_ASSERT_EQUAL_HEX8(0x41, driver.sent[0].data[4]);
+    TEST_ASSERT_EQUAL_HEX8(0x20, driver.sent[0].data[6]);
+    TEST_ASSERT_EQUAL_HEX8(computeVehicleChecksum(driver.sent[0]), driver.sent[0].data[7]);
+
+    CanFrame ignored = frame;
+    ignored.data[4] = 0x40;
+    TEST_ASSERT_FALSE(pluginProcessFrame(ignored, driver));
+    TEST_ASSERT_EQUAL_size_t(1, driver.sent.size());
+
+    ignored.data[4] = 0x80;
+    TEST_ASSERT_FALSE(pluginProcessFrame(ignored, driver));
+    TEST_ASSERT_EQUAL_size_t(1, driver.sent.size());
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -147,5 +194,6 @@ int main()
     RUN_TEST(test_bus_pin_matches_known_bus_and_allows_unknown_bus);
     RUN_TEST(test_filter_ids_keep_sixteen_rule_ids_when_gtw_silent_is_disabled_without_key);
     RUN_TEST(test_gtw_silent_is_disabled_without_custom_key);
+    RUN_TEST(test_byte_match_gates_0x370_counter_duplicate_plugin);
     return UNITY_END();
 }

@@ -14,6 +14,18 @@ ArduinoOTAClass ArduinoOTA;
 static constexpr const char *kCompatTag = "idf_compat";
 static constexpr const char *kSpiffsBase = "/spiffs";
 
+static void configureWifiLogLevels()
+{
+    esp_log_level_set("wifi", ESP_LOG_WARN);
+    esp_log_level_set("wifi_init", ESP_LOG_WARN);
+    esp_log_level_set("phy_init", ESP_LOG_WARN);
+    esp_log_level_set("esp_netif_lwip", ESP_LOG_WARN);
+    esp_log_level_set("esp_netif_handlers", ESP_LOG_WARN);
+    esp_log_level_set("httpd_txrx", ESP_LOG_ERROR);
+    esp_log_level_set("pp", ESP_LOG_WARN);
+    esp_log_level_set("net80211", ESP_LOG_WARN);
+}
+
 static std::string urlDecode(const std::string &input)
 {
     std::string out;
@@ -304,6 +316,7 @@ void WiFiClass::ensure()
 {
     if (initialized_)
         return;
+    configureWifiLogLevels();
     esp_netif_init();
     esp_event_loop_create_default();
     apNetif_ = esp_netif_create_default_wifi_ap();
@@ -352,6 +365,9 @@ bool WiFiClass::softAP(const char *ssid, const char *pass, int channelValue, int
 void WiFiClass::begin(const char *ssid, const char *pass)
 {
     ensure();
+    wifi_ap_record_t ap = {};
+    if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK)
+        esp_wifi_disconnect();
     wifi_config_t cfg = {};
     std::snprintf(reinterpret_cast<char *>(cfg.sta.ssid), sizeof(cfg.sta.ssid), "%s", ssid ? ssid : "");
     std::snprintf(reinterpret_cast<char *>(cfg.sta.password), sizeof(cfg.sta.password), "%s", pass ? pass : "");
@@ -401,6 +417,9 @@ int WiFiClass::scanNetworks(bool, bool, bool, uint32_t)
 {
     ensure();
     scanRecords_.clear();
+    wifi_mode_t mode = WIFI_MODE_NULL;
+    if (esp_wifi_get_mode(&mode) == ESP_OK && mode == WIFI_MODE_AP)
+        esp_wifi_set_mode(WIFI_MODE_APSTA);
     if (esp_wifi_scan_start(nullptr, true) != ESP_OK)
         return 0;
     uint16_t count = 0;

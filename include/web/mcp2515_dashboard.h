@@ -1586,7 +1586,8 @@ static bool dashPluginTestRuleMatches(const PluginRule &rule, const CanFrame &fr
 {
     if (rule.canId != frame.id)
         return false;
-    return pluginRuleMatchesBus(rule, frame) && pluginRuleMatchesMux(rule, frame);
+    return pluginRuleMatchesBus(rule, frame) && pluginRuleMatchesMux(rule, frame) &&
+           pluginRuleMatchesByte(rule, frame);
 }
 
 static bool dashBuildPluginTestFrame(const PluginRule &rule, const CanFrame &base, CanFrame &frame, String &error)
@@ -1630,6 +1631,9 @@ static void handlePluginList()
             j += ",\"mux\":" + String(rule.mux);
             j += ",\"mux_mask\":" + String(rule.muxMask);
             j += ",\"bus\":" + String(rule.busMask);
+            j += ",\"match_byte\":" + String(rule.matchByte);
+            j += ",\"match_mask\":" + String(rule.matchMask);
+            j += ",\"match_val\":" + String(rule.matchValue);
             j += ",\"send\":" + String(rule.sendAfter ? "true" : "false");
             j += ",\"ops\":[";
             for (uint8_t o = 0; o < rule.opCount; o++)
@@ -2029,6 +2033,16 @@ static void dashBeginSTA()
     dashLog("[WIFI] Connecting to " + String(staSSID) + "...");
 }
 
+static void dashPrepareStaReconnect()
+{
+    if (staConnectAttemptActive || staConnected || WiFi.status() == WL_CONNECTED)
+        WiFi.disconnect(false, false);
+    staConnected = false;
+    staConnectAttemptActive = false;
+    staRetryAt = 0;
+    autoUpdateEligibleAt = 0;
+}
+
 static void dashApplyWifiSlot(uint8_t slot)
 {
     if (slot >= wifiNetworkCount)
@@ -2063,20 +2077,18 @@ static void dashRotateAndConnect()
     dashBeginSTA();
 }
 
-static void dashConnectSTA()
-{
-    if (wifiNetworkCount == 0 || strlen(staSSID) == 0)
-        return;
-    dashStartAccessPoint(true);
-    dashBeginSTA();
-}
-
 static void dashScheduleSTAConnect(unsigned long delayMs)
 {
     if (strlen(staSSID) == 0)
         return;
     staConnectAttemptActive = false;
     staRetryAt = millis() + delayMs;
+}
+
+static void dashPrepareWifiScan()
+{
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.setSleep(false);
 }
 
 static void performAutoUpdate(); // forward decl, defined below
@@ -2137,6 +2149,7 @@ static void dashCheckWifi()
 
 static void handleWifiScan()
 {
+    dashPrepareWifiScan();
     int n = WiFi.scanNetworks(false, false, false, 300);
     String j = "{\"networks\":[";
     for (int i = 0; i < n && i < 20; i++)
@@ -2244,14 +2257,10 @@ static void handleWifiConfig()
     // Switch to newly saved slot and connect
     wifiNextRotateSlot = idx;
     dashApplyWifiSlot(idx);
-    staConnected = false;
-    if (staConnectAttemptActive)
-        WiFi.disconnect(false, false);
-    staConnectAttemptActive = false;
-    staRetryAt = 0;
-    dashConnectSTA();
+    dashPrepareStaReconnect();
 
     server.send(200, "application/json", "{\"ok\":true,\"idx\":" + String(idx) + "}");
+    dashScheduleSTAConnect(1000);
 }
 
 static void handleWifiDelete()
