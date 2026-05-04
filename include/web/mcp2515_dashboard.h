@@ -182,12 +182,6 @@ static String dashWifiKey(uint8_t slot, const char *sub)
     k += sub;
     return k;
 }
-[[maybe_unused]] static bool dashWifiNetworkValid(const DashWifiNetwork &n)
-{
-    size_t sl = strlen(n.ssid);
-    size_t pl = strlen(n.pass);
-    return sl > 0 && sl <= kDashMaxSsidLen && pl <= kDashMaxPassLen;
-}
 static void dashClearWifiNetwork(DashWifiNetwork &n)
 {
     n.ssid[0] = 0;
