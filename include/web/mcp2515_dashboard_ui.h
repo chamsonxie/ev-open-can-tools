@@ -561,6 +561,31 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
     </div>
   </div>
 
+  <div class="subsec" data-subkey="config-bluetooth" id="bt-subsec" style="display:none">
+    <div class="subsec-head">
+      <div class="subsec-title">Bluetooth <span class="title-help" onclick="return toggleHelp(this,event)" title="Bluetooth Classic SPP bridge. Streams CAN frames to any paired Android app using the SLCAN protocol. Only available when firmware is compiled with BLUETOOTH_SERIAL.">?</span></div>
+      <div class="subsec-meta" id="bt-meta">checking...</div>
+    </div>
+    <div class="subsec-body">
+      <div class="setting-row" style="padding-top:0">
+        <div class="setting-info">
+          <div class="setting-name">Pair with Android</div>
+          <div class="setting-desc">Device name shown during Bluetooth pairing</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <input class="sniff-input" id="bt-name" placeholder="Device name" maxlength="31" style="flex:1">
+        <button class="sniff-btn" onclick="saveBtName()">Save</button>
+      </div>
+      <div style="font-size:11px;color:var(--tx3)" id="bt-status-msg"></div>
+      <div style="font-size:11px;color:var(--tx3);margin-top:6px;line-height:1.5">
+        Streams all CAN frames in SLCAN format (<code>t1FD8AABB&hellip;\r</code>).<br>
+        Works with any Android serial or CAN monitor app.<br>
+        Name change takes effect after reboot.
+      </div>
+    </div>
+  </div>
+
   <div class="subsec" data-subkey="config-dashboard-log" style="margin-top:14px">
     <div class="subsec-head">
       <div class="subsec-title">Dashboard Log <span class="title-help" onclick="return toggleHelp(this,event)" title="Shows recent dashboard and firmware log lines. This is the dashboard logging output, not the CAN sniffer.">?</span></div>
@@ -1477,7 +1502,7 @@ async function poll(){
     const eprn=$('tgl-eprn');if(eprn&&typeof d.eprn!=='undefined')eprn.checked=d.eprn;
     if(!dashboardInitialLoaded){
       dashboardInitialLoaded=true;
-      pollLog();pollSniffer();pollPlugins();loadWifiStatus();loadApStatus();loadUpdateInfo();loadCanPins();
+      pollLog();pollSniffer();pollPlugins();loadWifiStatus();loadApStatus();loadUpdateInfo();loadCanPins();loadBtStatus();
     }
     }catch(e){}
   });
@@ -2067,6 +2092,30 @@ async function toggleAutoUpdate(){
 function updateFoot(ver){
   var ip=location.hostname||'192.168.4.1';
   $('dash-foot').textContent='ev-open-can-tools \u2022 v'+ver+' \u2022 '+ip;
+}
+
+// ── Bluetooth ──
+async function loadBtStatus(){
+  try{const r=await fetch('/bt_status');
+    if(!r.ok){return;}
+    const d=await r.json();
+    if(!d.available){return;}
+    // Show section
+    const sec=document.getElementById('bt-subsec');
+    if(sec)sec.style.display='';
+    $('bt-meta').textContent=d.connected?'connected':'not connected';
+    $('bt-meta').style.color=d.connected?'var(--ok)':'var(--tx3)';
+    if(d.name)$('bt-name').value=d.name;
+  }catch(e){}
+}
+async function saveBtName(){
+  const name=$('bt-name').value.trim();
+  if(!name){$('bt-status-msg').textContent='Enter a device name';$('bt-status-msg').style.color='var(--err)';return;}
+  try{const r=await fetch('/bt_config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'name='+encodeURIComponent(name)});
+    const d=await r.json();
+    if(d.ok){$('bt-status-msg').textContent='Saved! Reboot to apply.';$('bt-status-msg').style.color='var(--ok)';}
+    else{$('bt-status-msg').textContent=d.error||'Error';$('bt-status-msg').style.color='var(--err)';}
+  }catch(e){$('bt-status-msg').textContent='Error';$('bt-status-msg').style.color='var(--err)';}
 }
 
 async function loadCanPins(){

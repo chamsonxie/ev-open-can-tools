@@ -67,6 +67,20 @@ void setup()
 #ifdef ESP32_DASHBOARD
     mcpDashboardSetup(appHandler.get(), appDriver.get());
 #endif
+#if defined(BLUETOOTH_SERIAL) && defined(ESP32_DASHBOARD)
+    {
+        // Use NVS-saved device name if configured
+        Preferences btPrefs;
+        const char *btName = BT_DEVICE_NAME;
+        String savedBtName;
+        if (btPrefs.begin("ADunlock", true))
+        {
+            savedBtName = btPrefs.getString("bt_name", "");
+            btPrefs.end();
+        }
+        btBridgeInit(savedBtName.length() > 0 ? savedBtName.c_str() : btName);
+    }
+#endif
 #endif
 }
 

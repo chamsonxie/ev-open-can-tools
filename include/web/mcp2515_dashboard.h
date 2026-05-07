@@ -2749,6 +2749,46 @@ static void handleUpdateBeta()
     server.send(200, "application/json", j);
 }
 
+// ── Bluetooth SPP status + config ──────────────────────────────
+
+#if defined(BLUETOOTH_SERIAL)
+static void handleBtStatus()
+{
+    bool connected = btSerial.hasClient();
+    String name = String(BT_DEVICE_NAME);
+    // Read saved name from NVS if set
+    {
+        Preferences p;
+        if (p.begin(PREFS_NS, true))
+        {
+            String saved = p.getString("bt_name", "");
+            if (saved.length() > 0)
+                name = saved;
+            p.end();
+        }
+    }
+    String j = "{\"available\":true";
+    j += ",\"connected\":" + String(connected ? "true" : "false");
+    j += ",\"name\":\"" + jsonEscape(name) + "\"";
+    j += "}";
+    server.send(200, "application/json", j);
+}
+
+static void handleBtConfig()
+{
+    String newName = server.arg("name");
+    if (newName.length() == 0 || newName.length() > 31)
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"Name must be 1-31 characters\"}");
+        return;
+    }
+    prefs.begin(PREFS_NS, false);
+    prefs.putString("bt_name", newName);
+    prefs.end();
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Saved. Reboot to apply new BT device name.\"}");
+}
+#endif
+
 // ── Plugin frame callback wrapper ───────────────────────────────
 
 static void dashPluginTestCapture(const CanFrame &frame)
@@ -2970,6 +3010,10 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/update_beta", HTTP_POST, handleUpdateBeta);
     server.on("/auto_update", HTTP_GET, handleAutoUpdate);
     server.on("/auto_update", HTTP_POST, handleAutoUpdate);
+#if defined(BLUETOOTH_SERIAL)
+    server.on("/bt_status", HTTP_GET, handleBtStatus);
+    server.on("/bt_config", HTTP_POST, handleBtConfig);
+#endif
 
     server.begin();
     if (strlen(staSSID) > 0)

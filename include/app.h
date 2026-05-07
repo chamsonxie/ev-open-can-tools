@@ -59,6 +59,12 @@ static void appPollInjectionToggleButton();
 #include "web/mcp2515_dashboard.h"
 #endif
 
+// bt_bridge.h provides stubs when BLUETOOTH_SERIAL is not defined,
+// so it is always included for ESP32 dashboard builds.
+#if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD)
+#include "bt_bridge.h"
+#endif
+
 #if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD) && defined(DASH_RGB_STATUS_LED)
 static void appWriteStatusLed(uint8_t red, uint8_t green, uint8_t blue)
 {
@@ -171,6 +177,8 @@ static void appLoop()
 #endif
 #endif
 
+    btBridgePoll(); // process incoming BT commands (no-op if BT disabled)
+
     if constexpr (Driver::kSupportsISR)
     {
         if (!frameReady)
@@ -193,6 +201,7 @@ static void appLoop()
         h->handleMessage(frame, *appDriver);
         if (appPluginProcess)
             appPluginProcess(original, *appDriver);
+        btBridgeFrame(original); // forward raw received frame over BT (no-op if BT disabled)
 #if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD)
         if (++framesThisLoop >= 32)
         {
