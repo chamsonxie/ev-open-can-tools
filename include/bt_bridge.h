@@ -26,7 +26,7 @@
 #include "can_frame_types.h"
 
 #ifndef BT_DEVICE_NAME
-#define BT_DEVICE_NAME "ev-open-can-tools"
+#define BT_DEVICE_NAME "EV-CAN"
 #endif
 
 static BluetoothSerial btSerial;
