@@ -426,7 +426,7 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 
   <div class="subsec" id="hw3-slew-section" data-subkey="config-hw3-slew">
     <div class="subsec-head">
-      <div class="subsec-title">HW3 Offset Slew <span class="title-help" onclick="return toggleHelp(this,event)" title="Limits downward HW3 mux 2 offset changes sent by enabled dashboard plugins.">?</span></div>
+      <div class="subsec-title">Offset Slew <span class="title-help" onclick="return toggleHelp(this,event)" title="Limits downward HW3/HW4 mux 2 offset changes sent by enabled dashboard plugins.">?</span></div>
       <div class="subsec-meta" id="hw3-slew-meta">Off</div>
     </div>
     <div class="subsec-body">
@@ -1018,7 +1018,7 @@ function supportSettingsSummary(){
     'Firmware: '+($('fw-ver')?$('fw-ver').textContent:'—'),
     'Beta channel: '+($('beta-tgl')&&$('beta-tgl').checked?'enabled':'disabled'),
     'Auto-update: '+($('auto-upd-tgl')&&$('auto-upd-tgl').checked?'enabled':'disabled'),
-    'HW3 offset slew: '+(state.hw3OffsetSlew?'enabled @ '+(state.hw3SlewRate||5)+'%/s':'disabled'),
+    'Offset slew: '+(state.hw3OffsetSlew?'enabled @ '+(state.hw3SlewRate||5)+'%/s':'disabled'),
     'Plugin replay: '+(state.plgr||1)+'x',
     'Dashboard logging: '+($('tgl-eprn')&&$('tgl-eprn').checked?'enabled':'disabled')
   ].join('\n');
@@ -1041,7 +1041,7 @@ function buildSupportBody(){
     'Settings',
     'Beta channel: '+($('beta-tgl')&&$('beta-tgl').checked?'enabled':'disabled'),
     'Auto-update: '+($('auto-upd-tgl')&&$('auto-upd-tgl').checked?'enabled':'disabled'),
-    'HW3 offset slew: '+(state.hw3OffsetSlew?'enabled @ '+(state.hw3SlewRate||5)+'%/s':'disabled'),
+    'Offset slew: '+(state.hw3OffsetSlew?'enabled @ '+(state.hw3SlewRate||5)+'%/s':'disabled'),
     'Plugin replay: '+(state.plgr||1)+'x',
     'Dashboard logging: '+($('tgl-eprn')&&$('tgl-eprn').checked?'enabled':'disabled'),
     '',
@@ -1148,7 +1148,7 @@ function updateProfileControls(hw,sp,spAuto){
   const safeSp=clampProfileForHw(hw,sp);
   if(sp3)sp3.classList.toggle('hidden',hw!==1);
   if(sp4)sp4.classList.toggle('hidden',hw!==2);
-  if(slewSec)slewSec.style.display=hw===1?'':'none';
+  if(slewSec)slewSec.style.display=(hw===1||hw===2)?'':'none';
   const sp3Seg=$('sp3-seg'),sp4Seg=$('sp4-seg');
   updateProfileSeg(sp3Seg,safeSp,spAuto);
   updateProfileSeg(sp4Seg,safeSp,spAuto);

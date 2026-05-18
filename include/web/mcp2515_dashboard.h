@@ -518,7 +518,7 @@ static void dashApplySpeedProfileState()
 
 static bool dashReadHw3OffsetRaw(const CanFrame &frame, uint8_t &raw)
 {
-    if (hwMode != 1 || frame.id != 1021 || frame.dlc < 2 || readMuxID(frame) != 2)
+    if ((hwMode != 1 && hwMode != 2) || frame.id != 1021 || frame.dlc < 2 || readMuxID(frame) != 2)
         return false;
 
     raw = static_cast<uint8_t>(((frame.data[1] & 0x3F) << 2) | ((frame.data[0] >> 6) & 0x03));
@@ -1220,22 +1220,22 @@ static void handleConfig()
         if (pluginGetReplayCount() != previous)
             dashLog("[CFG] Plugin replay x" + String(pluginGetReplayCount()));
     }
-    if (server.hasArg("hw3OffsetSlew"))
+    if (server.hasArg("hw3OffsetSlew") || server.hasArg("offsetSlew"))
     {
-        bool v = server.arg("hw3OffsetSlew") == "1";
+        bool v = server.arg(server.hasArg("hw3OffsetSlew") ? "hw3OffsetSlew" : "offsetSlew") == "1";
         if (v != hw3OffsetSlew)
         {
             hw3OffsetSlew = v;
-            dashLog("[CFG] HW3 offset slew " + String(v ? "ON" : "OFF"));
+            dashLog("[CFG] Offset slew " + String(v ? "ON" : "OFF"));
         }
     }
-    if (server.hasArg("hw3SlewRate"))
+    if (server.hasArg("hw3SlewRate") || server.hasArg("offsetSlewRate"))
     {
-        uint8_t v = dashClampHw3SlewRate(server.arg("hw3SlewRate").toInt());
+        uint8_t v = dashClampHw3SlewRate(server.arg(server.hasArg("hw3SlewRate") ? "hw3SlewRate" : "offsetSlewRate").toInt());
         if (v != hw3SlewRate)
         {
             hw3SlewRate = v;
-            dashLog("[CFG] HW3 slew rate " + String(hw3SlewRate) + "%/s");
+            dashLog("[CFG] Offset slew rate " + String(hw3SlewRate) + "%/s");
         }
     }
     if (hwChanged)

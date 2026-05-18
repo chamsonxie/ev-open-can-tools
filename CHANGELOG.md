@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-beta.7] - 2026-05-18
+
+### Added
+
+- Add HW4 support for the web-native Offset Slew limiter while preserving existing HW3-compatible settings keys.
+
 ## [3.0.0-beta.6] - 2026-05-18
 
 ### Added
