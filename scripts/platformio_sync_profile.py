@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 from SCons.Errors import UserError
@@ -137,6 +139,17 @@ def _project_option_defines(env_obj):
     return normalized
 
 
+def _regenerate_dashboard(project_dir):
+    script = project_dir / "scripts" / "minify_dashboard.py"
+    src = project_dir / "include" / "web" / "mcp2515_dashboard_ui.src.h"
+    if not script.exists() or not src.exists():
+        return
+    try:
+        subprocess.run([sys.executable, str(script)], cwd=str(project_dir), check=True)
+    except subprocess.CalledProcessError as exc:
+        raise UserError(f"Dashboard UI generation failed: {exc}") from exc
+
+
 project_dir = Path(env["PROJECT_DIR"])
 config_path = Path(
     env.GetProjectOption("custom_profile_path", CONFIG_RELATIVE_PATH.as_posix())
@@ -173,6 +186,8 @@ config_text = config_path.read_text(encoding="utf-8")
 active = _active_defines(config_text)
 project_defines = _project_option_defines(env)
 uses_dashboard = "ESP32_DASHBOARD" in project_defines
+if uses_dashboard:
+    _regenerate_dashboard(project_dir)
 
 _DASH_HW_MAP = {"LEGACY": 0, "HW3": 1, "HW4": 2}
 
@@ -248,7 +263,7 @@ uses_dashboard = "ESP32_DASHBOARD" in project_defines
 if uses_dashboard:
     credentials = _string_define_values(config_text, CREDENTIAL_DEFINES)
 
-    # Default credentials ("changeme") are allowed — users change them via the
+    # Default credentials ("changeme") are allowed. Users change them via the
     # dashboard WiFi Hotspot card at runtime (persisted in NVS).
     for cred_name in CREDENTIAL_DEFINES:
         if cred_name in credentials:
@@ -258,18 +273,3 @@ if uses_dashboard:
 if version_path.exists():
     fw_version = version_path.read_text(encoding="utf-8").strip()
     env.Append(CPPDEFINES=[("FIRMWARE_VERSION", f'\\"{fw_version}\\"')])
-
-print(
-    f"Synced {display_config_path.as_posix()} defines for {env['PIOENV']}: "
-    + (
-        f"DASH_DEFAULT_HW={_DASH_HW_MAP[selected_vehicle]} ({selected_vehicle})"
-        if uses_dashboard_hw
-        else selected_vehicle
-    )
-    + (f", {', '.join(selected_options)}" if selected_options else "")
-    + (
-        f" (profile driver {profile_driver}, env driver {env_driver[0]})"
-        if profile_driver != env_driver[0]
-        else ""
-    )
-)
