@@ -134,7 +134,7 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 .sniff-ctrl{display:flex;gap:6px;margin-bottom:8px}
 .sniff-input{flex:1;background:var(--bg);border:1px solid var(--bd);border-radius:8px;
   padding:7px 10px;color:var(--tx);font-size:12px;font-family:inherit;transition:border .2s}
-.sniff-input{width:100%;min-width:0;box-sizing:border-box;} 
+.sniff-input{width:100%;min-width:0;box-sizing:border-box;}
 .sniff-input:focus{outline:none;border-color:var(--acc)}
 .sniff-input::placeholder{color:var(--tx3)}
 .sniff-btn{padding:7px 12px;background:transparent;border:1px solid var(--bd);border-radius:8px;
@@ -231,6 +231,8 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 .warn-bar{margin:0 16px 14px;padding:10px 14px;border-radius:9px;
   background:var(--errBg);border:1px solid var(--errBd);font-size:11px;color:var(--err);line-height:1.7}
 .foot{text-align:center;padding:8px 16px 20px;font-size:11px;color:var(--tx3)}
+.footer-actions{display:flex;justify-content:center;padding:4px 16px 24px}
+.footer-support-btn{flex:0 1 280px}
 </style>
 </head>
 <body>
@@ -614,13 +616,6 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
     <button class="sniff-btn" onclick="document.getElementById('backup-file').click()">Upload &amp; Restore</button>
     <input type="file" id="backup-file" accept=".json,application/json" style="display:none" onchange="importSettings(event)">
   </div>
-  <div class="setting-row" style="padding-top:12px;border-top:1px solid var(--bd)">
-    <div class="setting-info">
-      <div class="setting-name">Support <span class="title-help" onclick="return toggleHelp(this,event)" title="Collect a support summary and open a GitHub issue with the details prefilled.">?</span></div>
-      <div class="setting-desc">Copy a status summary before opening a GitHub issue</div>
-    </div>
-    <button class="sniff-btn" onclick="openSupport()">Open</button>
-  </div>
   <div id="backup-info" class="info-box" style="display:none">
     Exports AP credentials, WiFi Internet, CAN pins and beta channel as JSON. Useful before a full re-flash or when migrating to another device. <b>Passwords are included in clear text</b> &mdash; keep the file safe.
   </div>
@@ -798,6 +793,9 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 <div class="foot" style="margin-top:8px;font-size:10px">
   <div style="margin-bottom:4px">Gift with Monero</div>
   <div style="word-break:break-all;color:var(--tx2)">46CJEjnN74N83AZHHYKX3mD9kkV6UJYVjN58PTWvQ6VU8Vvn3tmyExkaC2kq9asD6SZY9weaZqx5o9nf1MxkKbmTKWLUeRD</div>
+</div>
+<div class="foot footer-actions">
+  <button type="button" class="btn btn-reboot footer-support-btn" onclick="openSupport()">Support</button>
 </div>
 
 <script>

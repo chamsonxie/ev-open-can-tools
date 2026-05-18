@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Added a regression test proving `or_byte` and `and_byte` plugin operations apply their configured values correctly.
+- Moved the dashboard Support button from the Configuration card into the footer source HTML.
 
 ## [3.0.0-beta.5] - 2026-05-04
 
