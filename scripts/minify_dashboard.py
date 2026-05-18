@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Minify + gzip embedded dashboard HTML in mcp2515_dashboard_ui.h.
 
-Reads source HTML from index.html in the repo root, minifies HTML/CSS/JS,
+Reads source HTML from mcp2515_dashboard_ui.src.h, minifies HTML/CSS/JS,
 gzips the result, and writes mcp2515_dashboard_ui.h with both:
   - DASH_HTML[]   (raw minified HTML, for native builds and debugging)
   - DASH_HTML_GZ[] / DASH_HTML_GZ_LEN  (gzip-compressed for HTTP send)
@@ -13,19 +13,55 @@ import subprocess
 import sys
 from pathlib import Path
 
-import rjsmin
-import csscompressor
-import htmlmin
+try:
+    import rjsmin
+except ImportError:
+    rjsmin = None
+
+try:
+    import csscompressor
+except ImportError:
+    csscompressor = None
+
+try:
+    import htmlmin
+except ImportError:
+    htmlmin = None
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "include" / "web" / "mcp2515_dashboard_ui.src.h"
 DST = ROOT / "include" / "web" / "mcp2515_dashboard_ui.h"
 
 
+def js_minify(code: str) -> str:
+    if rjsmin:
+        return rjsmin.jsmin(code)
+    return code
+
+
+def css_minify(code: str) -> str:
+    if csscompressor:
+        return csscompressor.compress(code)
+    return code
+
+
+def html_minify(code: str) -> str:
+    if htmlmin:
+        return htmlmin.minify(
+            code,
+            remove_comments=True,
+            remove_empty_space=True,
+            remove_all_empty_space=True,
+            reduce_boolean_attributes=True,
+            keep_pre=True,
+        )
+    return code
+
+
 def terser_minify(code: str) -> str:
     terser = shutil.which("terser")
     if not terser:
-        return rjsmin.jsmin(code)
+        return js_minify(code)
     proc = subprocess.run(
         [terser, "--compress", "--ecma", "2020"],
         input=code,
@@ -34,7 +70,7 @@ def terser_minify(code: str) -> str:
     )
     if proc.returncode != 0:
         print(f"warn: terser failed: {proc.stderr}", file=sys.stderr)
-        return rjsmin.jsmin(code)
+        return js_minify(code)
     return proc.stdout
 
 
@@ -60,16 +96,9 @@ if not m:
 html = m.group(1)
 before = len(html)
 
-html = minify_blocks(html, "style", csscompressor.compress)
+html = minify_blocks(html, "style", css_minify)
 html = minify_blocks(html, "script", terser_minify)
-html = htmlmin.minify(
-    html,
-    remove_comments=True,
-    remove_empty_space=True,
-    remove_all_empty_space=True,
-    reduce_boolean_attributes=True,
-    keep_pre=True,
-)
+html = html_minify(html)
 
 raw_len = len(html)
 gz = gzip.compress(html.encode("utf-8"), compresslevel=9, mtime=0)

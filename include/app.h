@@ -188,12 +188,21 @@ static void appSetup(std::unique_ptr<Driver> drv, const char *readyMsg)
 #endif
 
     appDriver = std::move(drv);
-    if (!appDriver->init())
+    bool canInitOk = appDriver->init();
+    if (!canInitOk)
     {
         Serial.println("CAN init failed");
     }
+    char canDiag[640];
+    appDriver->diagnosticsSummary(canDiag, sizeof(canDiag));
+    Serial.print("[CAN] ");
+    Serial.println(canDiag);
 
     appDriver->setFilters(appHandler->filterIds(), appHandler->filterIdCount());
+    appDriver->diagnosticsSummary(canDiag, sizeof(canDiag));
+    Serial.print("[CAN] after filters: ");
+    Serial.println(canDiag);
+
     if constexpr (Driver::kSupportsISR)
     {
         appDriver->enableInterrupt(canISR);

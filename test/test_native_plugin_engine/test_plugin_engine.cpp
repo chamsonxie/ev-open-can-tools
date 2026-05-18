@@ -187,6 +187,31 @@ void test_byte_match_gates_0x370_counter_duplicate_plugin()
     TEST_ASSERT_EQUAL_size_t(1, driver.sent.size());
 }
 
+void test_or_and_byte_ops_apply_expected_values()
+{
+    installPlugin(R"JSON({
+      "name":"byte ops",
+      "rules":[{
+        "id":777,
+        "ops":[
+          {"type":"or_byte","byte":1,"val":10},
+          {"type":"and_byte","byte":2,"val":240}
+        ]
+      }]
+    })JSON");
+
+    MockDriver driver;
+    CanFrame frame = {.id = 777};
+    frame.dlc = 8;
+    frame.data[1] = 0x50;
+    frame.data[2] = 0xFF;
+
+    TEST_ASSERT_TRUE(pluginProcessFrame(frame, driver));
+    TEST_ASSERT_EQUAL_size_t(1, driver.sent.size());
+    TEST_ASSERT_EQUAL_HEX8(0x5A, driver.sent[0].data[1]);
+    TEST_ASSERT_EQUAL_HEX8(0xF0, driver.sent[0].data[2]);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -195,5 +220,6 @@ int main()
     RUN_TEST(test_filter_ids_keep_sixteen_rule_ids_when_gtw_silent_is_disabled_without_key);
     RUN_TEST(test_gtw_silent_is_disabled_without_custom_key);
     RUN_TEST(test_byte_match_gates_0x370_counter_duplicate_plugin);
+    RUN_TEST(test_or_and_byte_ops_apply_expected_values);
     return UNITY_END();
 }
