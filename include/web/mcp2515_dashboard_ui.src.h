@@ -826,7 +826,7 @@ function updateGtwBadge(v){
   el.className='gtw-badge '+(known?'known':'');
   el.title=known?('GTW_autopilot: '+gtwAutopilotName(v)+' ('+v+')'):'GTW_autopilot: not seen yet';
 }
-let state={hw:1,can:true,apGate:false,sp:0,spAuto:true,plgr:1,plgrmax:20,hw3OffsetSlew:false,hw3SlewRate:5};
+let state={hw:1,can:true,apGate:false,sp:0,spAuto:true,plgr:1,plgrmax:20,hw3OffsetSlew:false,hw3SlewRate:5,gate:null};
 let sniffPaused=false,sniffFrames=[];
 let sniffShowDbcIds=localStorage.getItem('sniffIdMode')==='dbc';
 let otaFile=null;
@@ -1024,8 +1024,39 @@ function supportSettingsSummary(){
   ].join('\n');
 }
 
+function supportBool(v){return v?'yes':'no';}
+function supportAge(v){return typeof v==='number'&&v>=0?(v+' ms ago'):'never';}
+function supportHexByte(v){return typeof v==='number'&&v>=0?'0x'+toHex(v&255,2):'unavailable';}
+function supportGateDiagnostics(){
+  const g=state.gate;
+  if(!g)return 'AP Gate Diagnostics: unavailable';
+  const plugins=Array.isArray(g.plugins)&&g.plugins.length
+    ?g.plugins.map(p=>'#'+p.priority+' '+p.name).join(', ')
+    :'none';
+  return [
+    'AP Gate Diagnostics',
+    'Enabled: '+supportBool(!!g.enabled),
+    'CAN active: '+supportBool(!!g.canActive),
+    'Injection allowed: '+supportBool(!!g.allowed),
+    'Reason: '+(g.reason||'unknown'),
+    'AP active: '+supportBool(!!g.ap),
+    'Parked: '+supportBool(!!g.parked),
+    'Summoning: '+supportBool(!!g.summoning),
+    'AP stable: '+(typeof g.apStableMs==='number'?g.apStableMs:0)+' ms',
+    'Last 921: '+supportAge(g.last921AgeMs),
+    'Last 280: '+supportAge(g.last280AgeMs),
+    'Last 390: '+supportAge(g.last390AgeMs),
+    'Last 1016: '+supportAge(g.last1016AgeMs),
+    'Last 1021: '+supportAge(g.last1021AgeMs),
+    'DAS_autopilotStatus: '+supportHexByte(g.dasAutopilotStatus),
+    'Hardware: '+(HW[typeof g.hardware==='number'?g.hardware:state.hw]||'?'),
+    'Enabled plugins: '+plugins
+  ].join('\n');
+}
+
 function buildSupportBody(){
   const enabled=supportPluginSummary();
+  const gate=supportGateDiagnostics();
   const body=[
     'ev-open-can-tools support report',
     '',
@@ -1044,6 +1075,8 @@ function buildSupportBody(){
     'Offset slew: '+(state.hw3OffsetSlew?'enabled @ '+(state.hw3SlewRate||5)+'%/s':'disabled'),
     'Plugin replay: '+(state.plgr||1)+'x',
     'Dashboard logging: '+($('tgl-eprn')&&$('tgl-eprn').checked?'enabled':'disabled'),
+    '',
+    gate,
     '',
     'Enabled plugins',
     enabled,
@@ -1515,6 +1548,7 @@ async function poll(){
       const d=await fetchPollJson('/status',5000,true);
     const on=!!d.can,armed=!!d.ci,injecting=typeof d.ia==='undefined'?armed:!!d.ia,fpsVal=Number(d.fps||0);
     state.hw=d.hw;state.sp=clampProfileForHw(d.hw,d.sp);state.spAuto=typeof d.spAuto==='undefined'?state.spAuto:!!d.spAuto;state.can=armed;
+    state.gate=d.gate||null;
     if(typeof d.plgr!=='undefined')updatePluginReplayControl(d.plgr,d.plgrmax);
     if(typeof d.apGate!=='undefined')updateApGateControl(d);
     updateHw3SlewControl(d);

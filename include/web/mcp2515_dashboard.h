@@ -470,6 +470,148 @@ static bool dashInjectionActive()
     return canActive && dashApInjectionAllowed();
 }
 
+static long dashAgeMs(uint32_t seenMs, unsigned long now)
+{
+    if (seenMs == 0)
+        return -1;
+    return static_cast<long>(now - seenMs);
+}
+
+static const char *dashGateReason(bool enabled, bool allowed, bool ap, bool parked, bool summoning)
+{
+    if (!enabled)
+        return "off";
+    if (!canActive)
+        return "blocked";
+    if (!dashHandler)
+        return "unknown";
+    if (allowed)
+    {
+        if (ap)
+            return "ap_active";
+        if (parked)
+            return "parked";
+        if (summoning)
+            return "summoning";
+        return "unknown";
+    }
+    return "waiting_ap";
+}
+
+static unsigned long dashApStableStartedMs = 0;
+static bool dashLastApForLog = false;
+static bool dashLastGateLogValid = false;
+static bool dashLastGateAllowed = false;
+static bool dashLastGateAp = false;
+static bool dashLastGateParked = false;
+static bool dashLastGateSummoning = false;
+static String dashLastGateReason;
+
+static void dashLogGateStateIfChanged(bool allowed, const char *reason, bool ap, bool parked, bool summoning)
+{
+    unsigned long now = millis();
+    if (ap && !dashLastApForLog)
+    {
+        dashApStableStartedMs = now;
+        dashLog("[APGATE] AP rising edge");
+    }
+    else if (!ap && dashLastApForLog)
+    {
+        dashApStableStartedMs = 0;
+        dashLog("[APGATE] AP falling edge");
+    }
+    dashLastApForLog = ap;
+
+    String reasonStr(reason);
+    if (!dashLastGateLogValid || allowed != dashLastGateAllowed || ap != dashLastGateAp ||
+        parked != dashLastGateParked || summoning != dashLastGateSummoning ||
+        reasonStr != dashLastGateReason)
+    {
+        dashLog("[APGATE] reason=" + reasonStr + " ap=" + String(ap ? 1 : 0) +
+                " parked=" + String(parked ? 1 : 0) + " summon=" + String(summoning ? 1 : 0) +
+                " allowed=" + String(allowed ? 1 : 0));
+        dashLastGateLogValid = true;
+        dashLastGateAllowed = allowed;
+        dashLastGateAp = ap;
+        dashLastGateParked = parked;
+        dashLastGateSummoning = summoning;
+        dashLastGateReason = reasonStr;
+    }
+}
+
+static String dashGateDiagnosticsJson(unsigned long now)
+{
+    bool ap = dashHandler ? (bool)dashHandler->APActive : false;
+    bool parked = dashHandler ? (bool)dashHandler->Parked : false;
+    bool summoning = dashHandler ? (bool)dashHandler->Summoning : false;
+    bool allowed = dashInjectionActive();
+    const char *reason = dashGateReason(apInjectionGate, allowed, ap, parked, summoning);
+    dashLogGateStateIfChanged(allowed, reason, ap, parked, summoning);
+
+    unsigned long apStableMs = (ap && dashApStableStartedMs > 0) ? now - dashApStableStartedMs : 0;
+    int dasStatus = dashHandler ? (int)dashHandler->dasAutopilotStatus : -1;
+
+    String j = "\"gate\":{\"enabled\":";
+    j += apInjectionGate ? "true" : "false";
+    j += ",\"apGateEnabled\":";
+    j += apInjectionGate ? "true" : "false";
+    j += ",\"canActive\":";
+    j += canActive ? "true" : "false";
+    j += ",\"allowed\":";
+    j += allowed ? "true" : "false";
+    j += ",\"injectionAllowed\":";
+    j += allowed ? "true" : "false";
+    j += ",\"reason\":\"";
+    j += reason;
+    j += "\",\"ap\":";
+    j += ap ? "true" : "false";
+    j += ",\"APActive\":";
+    j += ap ? "true" : "false";
+    j += ",\"parked\":";
+    j += parked ? "true" : "false";
+    j += ",\"Parked\":";
+    j += parked ? "true" : "false";
+    j += ",\"summoning\":";
+    j += summoning ? "true" : "false";
+    j += ",\"Summoning\":";
+    j += summoning ? "true" : "false";
+    j += ",\"apStableMs\":";
+    j += apStableMs;
+    j += ",\"last921AgeMs\":";
+    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last921Ms, now)) : String(-1);
+    j += ",\"last280AgeMs\":";
+    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last280Ms, now)) : String(-1);
+    j += ",\"last390AgeMs\":";
+    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last390Ms, now)) : String(-1);
+    j += ",\"last1016AgeMs\":";
+    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last1016Ms, now)) : String(-1);
+    j += ",\"last1021AgeMs\":";
+    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last1021Ms, now)) : String(-1);
+    j += ",\"dasAutopilotStatus\":";
+    j += dasStatus;
+    j += ",\"hardware\":";
+    j += hwMode;
+    j += ",\"hwMode\":";
+    j += hwMode;
+    j += ",\"plugins\":[";
+    bool firstPlugin = true;
+    for (uint8_t i = 0; i < pluginCount; i++)
+    {
+        if (!pluginStore[i].enabled)
+            continue;
+        if (!firstPlugin)
+            j += ",";
+        firstPlugin = false;
+        j += "{\"name\":\"";
+        j += jsonEscape(pluginStore[i].name);
+        j += "\",\"priority\":";
+        j += String((int)pluginStore[i].priority);
+        j += "}";
+    }
+    j += "]}";
+    return j;
+}
+
 static bool dashCheckNagDisabled()
 {
     return false;
@@ -1126,6 +1268,8 @@ static void handleStatus()
     j += mcpEflg;
     j += ",\"up\":";
     j += (millis() - startMs) / 1000;
+    j += ",";
+    j += dashGateDiagnosticsJson(now);
     j += ",\"probe\":{\"active\":";
     j += dashWriteProbe.active ? "true" : "false";
     j += ",\"state\":";

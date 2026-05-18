@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-beta.8] - 2026-05-18
+
+### Added
+
+- Added AP Gate Diagnostics to /status and the Support report to debug false Active injection states.
+
 ## [3.0.0-beta.7] - 2026-05-18
 
 ### Added

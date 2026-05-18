@@ -36,6 +36,12 @@ struct CarManagerBase
     Shared<uint32_t> frameCount{0};
     Shared<uint32_t> framesSent{0};
     Shared<int> speedOffset{0};
+    Shared<uint32_t> last921Ms{0};
+    Shared<uint32_t> last280Ms{0};
+    Shared<uint32_t> last390Ms{0};
+    Shared<uint32_t> last1016Ms{0};
+    Shared<uint32_t> last1021Ms{0};
+    Shared<int> dasAutopilotStatus{-1};
 
     unsigned long lastSummonActivityMs = 0;
     // Summon-vs-AP/TACC discrimination state. ACA (DI_autonomyControlActive)
@@ -59,6 +65,34 @@ struct CarManagerBase
     bool injectionGateOpen() const
     {
         return (bool)APActive || (bool)Parked || (bool)Summoning;
+    }
+
+    static uint32_t diagnosticMillis()
+    {
+#ifndef NATIVE_BUILD
+        return millis();
+#else
+        return 0;
+#endif
+    }
+
+    void updateGateFrameDiagnostics(const CanFrame &frame)
+    {
+        uint32_t now = diagnosticMillis();
+        if (frame.id == 921)
+        {
+            last921Ms = now;
+            if (frame.dlc >= 1)
+                dasAutopilotStatus = readDASAutopilotStatus(frame);
+        }
+        else if (frame.id == 280)
+            last280Ms = now;
+        else if (frame.id == 390)
+            last390Ms = now;
+        else if (frame.id == 1016)
+            last1016Ms = now;
+        else if (frame.id == 1021)
+            last1021Ms = now;
     }
 
     // Recompute Summoning from current sprSeen + lastAca state. Summoning
@@ -149,6 +183,7 @@ struct LegacyHandler : public CarManagerBase
     {
         if (onFrame)
             onFrame(frame);
+        updateGateFrameDiagnostics(frame);
         // STW_ACTN_RQ (0x045 = 69): Follow-Distance-Stalk as Source for Profile Mapping
         // byte[1]: 0x00=Pos1, 0x21=Pos2, 0x42=Pos3, 0x64=Pos4, 0x85=Pos5, 0xA6=Pos6, 0xC8=Pos7
         if (frame.id == 69)
@@ -261,6 +296,7 @@ struct HW3Handler : public CarManagerBase
     {
         if (onFrame)
             onFrame(frame);
+        updateGateFrameDiagnostics(frame);
         if (frame.id == 280)
         {
             if (frame.dlc < 3)
@@ -530,6 +566,7 @@ struct HW4Handler : public CarManagerBase
     {
         if (onFrame)
             onFrame(frame);
+        updateGateFrameDiagnostics(frame);
         if (frame.id == 280)
         {
             if (frame.dlc < 3)
