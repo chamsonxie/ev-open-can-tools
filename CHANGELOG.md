@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-beta.6] - 2026-05-18
+
+### Added
+
+- CAN driver diagnostics are now exposed through the driver interface and logged at startup.
+- TWAI builds now report TX/RX pins, driver state, queue counters, bus errors, recovery count, rejected frame count, and last ESP-IDF CAN errors.
+
+### Fixed
+
+- Added a regression test proving `or_byte` and `and_byte` plugin operations apply their configured values correctly.
+
 ## [3.0.0-beta.5] - 2026-05-04
 
 ### Added
