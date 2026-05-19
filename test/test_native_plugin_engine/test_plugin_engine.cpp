@@ -212,6 +212,45 @@ void test_or_and_byte_ops_apply_expected_values()
     TEST_ASSERT_EQUAL_HEX8(0xF0, driver.sent[0].data[2]);
 }
 
+void test_hw3_fsd_activation_rule_reports_diagnostics()
+{
+    installPlugin(R"JSON({
+      "name":"FSD Activation HW3",
+      "rules":[{
+        "id":1021,
+        "mux":0,
+        "match_byte":5,
+        "match_mask":255,
+        "match_val":1,
+        "ops":[{"type":"set_bit","bit":46,"val":1}]
+      }]
+    })JSON");
+
+    MockDriver driver;
+    CanFrame frame = {.id = 1021};
+    frame.dlc = 8;
+    frame.data[0] = 0x00;
+    frame.data[1] = 0x00;
+    frame.data[2] = 0x00;
+    frame.data[3] = 0xD0;
+    frame.data[4] = 0x20;
+    frame.data[5] = 0x01;
+    frame.data[6] = 0x02;
+    frame.data[7] = 0x80;
+
+    TEST_ASSERT_TRUE(pluginProcessFrame(frame, driver));
+    TEST_ASSERT_EQUAL_size_t(1, driver.sent.size());
+    TEST_ASSERT_EQUAL_HEX8(0x41, driver.sent[0].data[5]);
+
+    PluginRule &rule = pluginStore[0].rules[0];
+    TEST_ASSERT_EQUAL_UINT32(1, rule.diag.matchCount);
+    TEST_ASSERT_EQUAL_UINT32(1, rule.diag.changedCount);
+    TEST_ASSERT_EQUAL_UINT32(1, rule.diag.sendOkCount);
+    TEST_ASSERT_EQUAL_UINT32(0, rule.diag.sendFailCount);
+    TEST_ASSERT_EQUAL_HEX8(0x01, rule.diag.lastOriginal[5]);
+    TEST_ASSERT_EQUAL_HEX8(0x41, rule.diag.lastModified[5]);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -221,5 +260,6 @@ int main()
     RUN_TEST(test_gtw_silent_is_disabled_without_custom_key);
     RUN_TEST(test_byte_match_gates_0x370_counter_duplicate_plugin);
     RUN_TEST(test_or_and_byte_ops_apply_expected_values);
+    RUN_TEST(test_hw3_fsd_activation_rule_reports_diagnostics);
     return UNITY_END();
 }

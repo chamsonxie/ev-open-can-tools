@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-beta.9] - 2026-05-19
+
+### Added
+
+- Plugin rule diagnostics now report match, change, and transmit counters plus last original/modified frames in `/plugins` and support reports.
+
+### Fixed
+
+- Dashboard CAN recorder CSV rows now use real comma separators.
+
 ## [3.0.0-beta.8] - 2026-05-18
 
 ### Added

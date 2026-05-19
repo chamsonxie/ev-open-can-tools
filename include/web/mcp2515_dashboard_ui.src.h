@@ -1003,7 +1003,17 @@ function dashConfirm(message,title,okText,cancelText){
 
 function supportPluginSummary(){
   return (installedPlugins||[]).filter(p=>p&&p.enabled).map(function(p){
-    return '#'+p.priority+' '+p.name+(p.rules?' ('+p.rules+' rules)':'');
+    const rules=(p.details||[]).map(function(r,idx){
+      const d=r.diag||{};
+      return '  rule '+(idx+1)+' CAN '+(r.hex||r.id)+(r.mux>=0?' mux '+r.mux:'')+
+        ': match='+((d.match_count||0))+
+        ' changed='+((d.changed_count||0))+
+        ' tx_ok='+((d.send_ok_count||0))+
+        ' tx_fail='+((d.send_fail_count||0))+
+        ' last_original='+(d.last_original||'')+
+        ' last_modified='+(d.last_modified||'');
+    }).join('\n');
+    return '#'+p.priority+' '+p.name+(p.rules?' ('+p.rules+' rules)':'')+(rules?'\n'+rules:'');
   }).join('\n')||'none';
 }
 
@@ -2026,6 +2036,15 @@ function fmtRuleMatch(r){
   if(!mask)return '';
   return 'byte['+(r.match_byte||0)+']&0x'+(mask&255).toString(16)+'=0x'+((r.match_val||0)&255).toString(16);
 }
+function fmtRuleDiag(r){
+  const d=r.diag||{};
+  return 'diag match='+(d.match_count||0)+
+    ' changed='+(d.changed_count||0)+
+    ' tx_ok='+(d.send_ok_count||0)+
+    ' tx_fail='+(d.send_fail_count||0)+
+    (d.last_original?' original='+d.last_original:'')+
+    (d.last_modified?' modified='+d.last_modified:'');
+}
 function renderPluginDetails(details){
   return '<div style="margin-top:6px;padding:8px;background:var(--bg2);border-radius:6px;font-size:11px;font-family:monospace">'
     +details.map(r=>{
@@ -2036,6 +2055,7 @@ function renderPluginDetails(details){
       if(r.pluginConflict) hdr+=' <span style="color:var(--warn);font-weight:bold" title="Lower priority bits are ignored">&#9888; Priority overlap</span>';
       hdr+='</div>';
       let ops=r.ops.map(o=>'<div style="padding-left:12px;color:var(--tx2)">'+fmtOp(o)+'</div>').join('');
+      ops+='<div style="padding-left:12px;color:var(--tx3)">'+fmtRuleDiag(r)+'</div>';
       let notes='';
       if(r.pluginConflict){
         notes='<div style="margin-top:4px;padding-left:12px;color:var(--warn)">'+pluginConflictGroups(r.conflicts).map(g=>'bit '+pluginFormatBits(g.bits)+' ignored; '+g.winner+' (#'+g.winnerPriority+') wins').join('<br>')+'</div>';

@@ -1515,13 +1515,13 @@ static void handleRecStop()
         for (int i = 0; i < n; i++)
         {
             f.print(recBuf[i].ts);
-            f.print(',');
+            f.print(",");
             f.print(recBuf[i].id);
-            f.print(',');
+            f.print(",");
             f.print(recBuf[i].dlc);
             for (int b = 0; b < 8; b++)
             {
-                f.print(',');
+                f.print(",");
                 f.print(recBuf[i].data[b]);
             }
             f.println();
@@ -1707,6 +1707,21 @@ static String dashFrameDataHex(const CanFrame &frame)
     return out;
 }
 
+static String dashDiagBytesHex(const uint8_t *bytes)
+{
+    String out;
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        if (i)
+            out += " ";
+        if (bytes[i] < 16)
+            out += "0";
+        out += String(bytes[i], HEX);
+    }
+    out.toUpperCase();
+    return out;
+}
+
 static String dashPluginTestStatusJson()
 {
     uint16_t remaining = pluginTestState.sent < pluginTestState.total
@@ -1779,6 +1794,14 @@ static void handlePluginList()
             j += ",\"match_mask\":" + String(rule.matchMask);
             j += ",\"match_val\":" + String(rule.matchValue);
             j += ",\"send\":" + String(rule.sendAfter ? "true" : "false");
+            j += ",\"diag\":{\"match_count\":" + String(rule.diag.matchCount);
+            j += ",\"changed_count\":" + String(rule.diag.changedCount);
+            j += ",\"send_ok_count\":" + String(rule.diag.sendOkCount);
+            j += ",\"send_fail_count\":" + String(rule.diag.sendFailCount);
+            j += ",\"last_match_ms\":" + String(rule.diag.lastMatchMs);
+            j += ",\"last_send_ms\":" + String(rule.diag.lastSendMs);
+            j += ",\"last_original\":\"" + dashDiagBytesHex(rule.diag.lastOriginal) + "\"";
+            j += ",\"last_modified\":\"" + dashDiagBytesHex(rule.diag.lastModified) + "\"}";
             j += ",\"ops\":[";
             for (uint8_t o = 0; o < rule.opCount; o++)
             {
@@ -1885,6 +1908,7 @@ static bool pluginInstallJson(const String &json, const String &url)
         pluginsLocked = true;
         pluginStore[insertIndex] = temp;
         pluginNormalizePriorities();
+        pluginResetDiagnostics();
         pluginsLocked = false;
     }
     else if (!pluginInsert(pluginCount, temp))
@@ -1894,6 +1918,7 @@ static bool pluginInstallJson(const String &json, const String &url)
     }
 
     dashSaveAllPluginStates();
+    pluginResetDiagnostics();
     pluginResetPeriodicEmit();
 
     dashReapplyFiltersWithPlugins();
@@ -1964,6 +1989,7 @@ static void handlePluginToggle()
     if (idx < pluginCount)
     {
         pluginStore[idx].enabled = !pluginStore[idx].enabled;
+        pluginResetDiagnostics();
         pluginResetPeriodicEmit();
         dashSchedulePluginStateSave();
         dashReapplyFiltersWithPlugins();
@@ -3398,6 +3424,8 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
 #endif
     if (dashDriver)
         dashDriver->onSendFrame = mcpDashOnTxFrame;
+    pluginSetDiagnosticsLogger([](const char *message)
+                               { dashLog(String(message)); });
     startMs = millis();
     fpsLastMs = millis();
     dashResetWriteProbe();
