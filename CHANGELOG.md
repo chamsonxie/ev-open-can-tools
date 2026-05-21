@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-05-21
+
+Stable release bundling the `3.0.0-beta.1` through `3.0.0-beta.9` changes.
+
+### Added
+
+- ESP-IDF native build path for supported targets, including ESP-IDF runtime shims, IDF RGB LED support, dashboard gzip serving, and multi-SSID WiFi.
+- Status LED brightness control, AP Gate Diagnostics, CAN driver diagnostics, HW4 Offset Slew support, and plugin rule diagnostics in the dashboard and support reports.
+- Plugin rule byte-mask matching and the example `0x370` duplicate-counter plugin.
+- Manual firmware upload control to clear saved OTA credentials from browser local storage.
+
+### Changed
+
+- ESP-IDF builds are pinned through PlatformIO `platformio/espressif32` 7.0.0, with legacy Arduino boards moved under `legacy-arduino`.
+- Release and CI workflows cover supported ESP-IDF and legacy Arduino targets.
+- Dashboard assets are minified and served as gzip-compressed content to reduce flash usage.
+
+### Fixed
+
+- Dashboard CAN recorder CSV rows now use real comma separators.
+- ESP-IDF dashboard serving avoids large `String` copies and httpd stack overflows.
+- WiFi scan/save flows are more reliable in AP+STA mode.
+- Release workflows handle legacy Arduino board builds from `legacy-arduino`.
+- Plugin `or_byte` and `and_byte` operations apply their configured values correctly.
+- Dashboard Support button placement is generated from the footer source HTML.
+
 ## [3.0.0-beta.9] - 2026-05-19
 
 ### Added
