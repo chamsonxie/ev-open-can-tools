@@ -2,9 +2,13 @@
 
 #include "../can_frame_types.h"
 #include "can_driver.h"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcpp"
 #include <driver/twai.h>
+#pragma GCC diagnostic pop
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#include <string.h>
 
 class TWAIDriver : public CanDriver
 {
@@ -71,20 +75,26 @@ public:
             lock();
             if (!driverOK_)
             {
-                tryRecover();
+                tryRecoverLocked();
                 unlock();
                 return false;
             }
 
             twai_message_t msg;
-            if (twai_receive(&msg, 0) != ESP_OK)
+            esp_err_t rxErr = twai_receive(&msg, 0);
+            if (rxErr != ESP_OK)
             {
-                if (isBusOff())
-                    recoverWithCooldown();
+                lastReceiveErr_ = rxErr;
+                if (rxErr != ESP_ERR_TIMEOUT)
+                    receiveErrors_++;
+                if (isBusOffLocked())
+                    recoverWithCooldownLocked();
                 unlock();
                 return false;
             }
             bool accepted = exactFilterMatchesLocked(msg.identifier);
+            if (!accepted)
+                rejectedFrames_++;
             unlock();
 
             if (!accepted)
@@ -120,11 +130,14 @@ public:
         // Short timeout (2ms): modified frames should not be dropped, but
         // long blocks (10ms) risk overflowing the 32-deep RX queue.
         // At 500kbps, ~8 frames arrive in 2ms — queue handles this fine.
-        bool ok = twai_transmit(&msg, pdMS_TO_TICKS(2)) == ESP_OK;
+        esp_err_t txErr = twai_transmit(&msg, pdMS_TO_TICKS(2));
+        bool ok = txErr == ESP_OK;
         if (!ok)
         {
-            if (isBusOff())
-                recoverWithCooldown();
+            lastTransmitErr_ = txErr;
+            transmitErrors_++;
+            if (isBusOffLocked())
+                recoverWithCooldownLocked();
         }
         unlock();
         if (onSendFrame)
@@ -132,10 +145,73 @@ public:
         return ok;
     }
 
+    void diagnosticsJson(char *out, size_t outLen) const override
+    {
+        if (!out || outLen == 0)
+            return;
+
+        twai_status_info_t status = {};
+        bool hasStatus = driverInstalled_ && twai_get_status_info(&status) == ESP_OK;
+        const twai_status_info_t &s = hasStatus ? status : lastStatus_;
+        snprintf(out, outLen,
+                 "{\"type\":\"twai\",\"txPin\":%d,\"rxPin\":%d,\"ok\":%s,\"installed\":%s,\"state\":\"%s\",\"msgsToTx\":%u,\"msgsToRx\":%u,\"txErrCounter\":%u,\"rxErrCounter\":%u,\"txFailed\":%u,\"rxMissed\":%u,\"rxOverrun\":%u,\"arbLost\":%u,\"busErrors\":%u,\"recoveries\":%u,\"rxErrors\":%u,\"txErrors\":%u,\"rejected\":%u,\"lastInstallErr\":%d,\"lastStartErr\":%d,\"lastRxErr\":%d,\"lastTxErr\":%d}",
+                 static_cast<int>(txPin_), static_cast<int>(rxPin_), driverOK_ ? "true" : "false",
+                 driverInstalled_ ? "true" : "false", twaiStateName(s.state),
+                 static_cast<unsigned int>(s.msgs_to_tx), static_cast<unsigned int>(s.msgs_to_rx),
+                 static_cast<unsigned int>(s.tx_error_counter), static_cast<unsigned int>(s.rx_error_counter),
+                 static_cast<unsigned int>(s.tx_failed_count), static_cast<unsigned int>(s.rx_missed_count),
+                 static_cast<unsigned int>(s.rx_overrun_count), static_cast<unsigned int>(s.arb_lost_count),
+                 static_cast<unsigned int>(s.bus_error_count), static_cast<unsigned int>(recoveries_),
+                 static_cast<unsigned int>(receiveErrors_), static_cast<unsigned int>(transmitErrors_),
+                 static_cast<unsigned int>(rejectedFrames_), static_cast<int>(lastInstallErr_),
+                 static_cast<int>(lastStartErr_), static_cast<int>(lastReceiveErr_),
+                 static_cast<int>(lastTransmitErr_));
+    }
+
+    void diagnosticsSummary(char *out, size_t outLen) const override
+    {
+        if (!out || outLen == 0)
+            return;
+
+        twai_status_info_t status = {};
+        bool hasStatus = driverInstalled_ && twai_get_status_info(&status) == ESP_OK;
+        const twai_status_info_t &s = hasStatus ? status : lastStatus_;
+        snprintf(out, outLen,
+                 "TWAI tx=%d rx=%d ok=%s installed=%s state=%s msgsToRx=%u msgsToTx=%u txErrCounter=%u rxErrCounter=%u txFailed=%u rxMissed=%u rxOverrun=%u arbLost=%u busErrors=%u recoveries=%u rxErrors=%u txErrors=%u rejected=%u lastInstallErr=%d lastStartErr=%d lastRxErr=%d lastTxErr=%d",
+                 static_cast<int>(txPin_), static_cast<int>(rxPin_), driverOK_ ? "yes" : "no",
+                 driverInstalled_ ? "yes" : "no", twaiStateName(s.state),
+                 static_cast<unsigned int>(s.msgs_to_rx), static_cast<unsigned int>(s.msgs_to_tx),
+                 static_cast<unsigned int>(s.tx_error_counter), static_cast<unsigned int>(s.rx_error_counter),
+                 static_cast<unsigned int>(s.tx_failed_count), static_cast<unsigned int>(s.rx_missed_count),
+                 static_cast<unsigned int>(s.rx_overrun_count), static_cast<unsigned int>(s.arb_lost_count),
+                 static_cast<unsigned int>(s.bus_error_count), static_cast<unsigned int>(recoveries_),
+                 static_cast<unsigned int>(receiveErrors_), static_cast<unsigned int>(transmitErrors_),
+                 static_cast<unsigned int>(rejectedFrames_), static_cast<int>(lastInstallErr_),
+                 static_cast<int>(lastStartErr_), static_cast<int>(lastReceiveErr_),
+                 static_cast<int>(lastTransmitErr_));
+    }
+
 private:
     static constexpr uint8_t kMaxExactFilters = 32;
     static constexpr uint8_t kReadDrainBudget = 8;
     static constexpr uint32_t BUSOFF_COOLDOWN_MS = 1000;
+
+    static const char *twaiStateName(twai_state_t state)
+    {
+        switch (state)
+        {
+        case TWAI_STATE_STOPPED:
+            return "stopped";
+        case TWAI_STATE_RUNNING:
+            return "running";
+        case TWAI_STATE_BUS_OFF:
+            return "bus_off";
+        case TWAI_STATE_RECOVERING:
+            return "recovering";
+        default:
+            return "unknown";
+        }
+    }
 
     bool exactFilterMatchesLocked(uint32_t id) const
     {
@@ -149,33 +225,36 @@ private:
         return false;
     }
 
-    bool isBusOff()
+    bool isBusOffLocked()
     {
         if (!driverInstalled_)
             return false;
         twai_status_info_t status;
         if (twai_get_status_info(&status) != ESP_OK)
             return false;
+        lastStatus_ = status;
         return status.state == TWAI_STATE_BUS_OFF;
     }
 
-    void recoverWithCooldown()
+    void recoverWithCooldownLocked()
     {
         uint32_t now = millis();
         if (now - lastRecovery_ < BUSOFF_COOLDOWN_MS)
             return;
         lastRecovery_ = now;
+        recoveries_++;
 
         stopAndUninstallLocked();
         driverOK_ = installAndStartLocked();
     }
 
-    void tryRecover()
+    void tryRecoverLocked()
     {
         uint32_t now = millis();
         if (now - lastRecovery_ < BUSOFF_COOLDOWN_MS * 10)
             return;
         lastRecovery_ = now;
+        recoveries_++;
 
         stopAndUninstallLocked();
         driverOK_ = installAndStartLocked();
@@ -195,18 +274,23 @@ private:
 
     bool installAndStartLocked()
     {
-        if (twai_driver_install(&g_config_, &t_config_, &f_config_) != ESP_OK)
+        lastInstallErr_ = twai_driver_install(&g_config_, &t_config_, &f_config_);
+        if (lastInstallErr_ != ESP_OK)
         {
             driverInstalled_ = false;
             return false;
         }
         driverInstalled_ = true;
-        if (twai_start() != ESP_OK)
+        lastStartErr_ = twai_start();
+        if (lastStartErr_ != ESP_OK)
         {
             twai_driver_uninstall();
             driverInstalled_ = false;
             return false;
         }
+        lastInstallErr_ = ESP_OK;
+        lastStartErr_ = ESP_OK;
+        twai_get_status_info(&lastStatus_);
         return true;
     }
 
@@ -214,6 +298,7 @@ private:
     {
         if (!driverInstalled_)
             return;
+        twai_get_status_info(&lastStatus_);
         twai_stop();
         twai_driver_uninstall();
         driverInstalled_ = false;
@@ -231,4 +316,13 @@ private:
     uint32_t lastRecovery_ = 0;
     uint32_t exactFilterIds_[kMaxExactFilters] = {};
     uint8_t exactFilterCount_ = 0;
+    twai_status_info_t lastStatus_ = {};
+    esp_err_t lastInstallErr_ = ESP_OK;
+    esp_err_t lastStartErr_ = ESP_OK;
+    esp_err_t lastReceiveErr_ = ESP_OK;
+    esp_err_t lastTransmitErr_ = ESP_OK;
+    uint32_t receiveErrors_ = 0;
+    uint32_t transmitErrors_ = 0;
+    uint32_t rejectedFrames_ = 0;
+    uint32_t recoveries_ = 0;
 };

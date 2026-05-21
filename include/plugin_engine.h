@@ -6,6 +6,8 @@
 #if defined(NATIVE_BUILD)
 #include <string>
 using String = std::string;
+#elif defined(ESP_PLATFORM)
+#include "platform/espidf_runtime.h"
 #else
 #include <SPIFFS.h>
 #endif
@@ -96,15 +98,31 @@ struct PluginPeriodicEmitState
     PluginGtwUdsMachine uds;
 };
 
+struct PluginRuleDiagnostics
+{
+    uint32_t matchCount;
+    uint32_t changedCount;
+    uint32_t sendOkCount;
+    uint32_t sendFailCount;
+    unsigned long lastMatchMs;
+    unsigned long lastSendMs;
+    uint8_t lastOriginal[8];
+    uint8_t lastModified[8];
+};
+
 struct PluginRule
 {
     uint32_t canId;
     int16_t mux; // -1 = match any mux
     uint8_t muxMask;
+    uint8_t matchByte;
+    uint8_t matchMask; // 0 = no byte match
+    uint8_t matchValue;
     uint8_t busMask;
     PluginOp ops[PLUGIN_OPS_MAX];
     uint8_t opCount;
     bool sendAfter;
+    PluginRuleDiagnostics diag;
 };
 
 struct PluginData
@@ -127,6 +145,7 @@ static uint8_t pluginCount = 0;
 static volatile bool pluginsLocked = false;
 static PluginPeriodicEmitState pluginPeriodicEmit = {};
 static bool (*pluginBeforeSend)(CanFrame &modified, const CanFrame &original) = nullptr;
+static void (*pluginDiagnosticsLog)(const char *message) = nullptr;
 
 static uint8_t pluginClampReplayCount(int32_t count)
 {
@@ -139,9 +158,22 @@ static uint8_t pluginClampReplayCount(int32_t count)
 
 static uint8_t pluginReplayCount = pluginClampReplayCount(PLUGIN_REPLAY_COUNT);
 
+static void pluginResetDiagnostics();
+
 static void pluginSetReplayCount(int32_t count)
 {
     pluginReplayCount = pluginClampReplayCount(count);
+}
+
+static void pluginSetDiagnosticsLogger(void (*logger)(const char *message))
+{
+    pluginDiagnosticsLog = logger;
+}
+
+static void pluginLogDiagnosticsEvent(const char *message)
+{
+    if (pluginDiagnosticsLog)
+        pluginDiagnosticsLog(message);
 }
 
 static uint8_t pluginGetReplayCount()
@@ -512,6 +544,15 @@ static bool pluginRuleMatchesMux(const PluginRule &rule, const CanFrame &frame)
     return (frame.data[0] & mask) == (static_cast<uint8_t>(rule.mux) & mask);
 }
 
+static bool pluginRuleMatchesByte(const PluginRule &rule, const CanFrame &frame)
+{
+    if (rule.matchMask == 0)
+        return true;
+    if (rule.matchByte >= frame.dlc || rule.matchByte >= 8)
+        return false;
+    return (frame.data[rule.matchByte] & rule.matchMask) == (rule.matchValue & rule.matchMask);
+}
+
 static bool pluginRuleMuxIncludes(const PluginRule &rule, uint8_t mux)
 {
     if (rule.mux < 0)
@@ -546,6 +587,7 @@ static bool pluginParseJson(const String &json, PluginData &out)
         if (out.ruleCount >= PLUGIN_RULES_MAX)
             break;
         PluginRule &r = out.rules[out.ruleCount];
+        r = {};
         r.canId = rule["id"] | (uint32_t)0;
         int mux = rule["mux"] | (int)-1;
         if (mux < -1)
@@ -560,6 +602,38 @@ static bool pluginParseJson(const String &json, PluginData &out)
         if (r.mux >= 0 && r.muxMask == 0)
             r.muxMask = pluginDefaultMuxMask(r.mux);
         r.busMask = pluginParseBus(rule["bus"]);
+        r.matchByte = 0;
+        r.matchMask = 0;
+        r.matchValue = 0;
+        JsonVariant match = rule["match"];
+        if (match.is<JsonObject>())
+        {
+            r.matchByte = match["byte"] | (uint8_t)0;
+            r.matchMask = match["mask"] | (uint8_t)0xFF;
+            JsonVariant matchValue = match["val"];
+            if (matchValue.isNull())
+                matchValue = match["value"];
+            r.matchValue = matchValue | (uint8_t)0;
+        }
+        JsonVariant matchByte = rule["match_byte"];
+        if (matchByte.isNull())
+            matchByte = rule["matchByte"];
+        JsonVariant matchMask = rule["match_mask"];
+        if (matchMask.isNull())
+            matchMask = rule["matchMask"];
+        JsonVariant matchValue = rule["match_val"];
+        if (matchValue.isNull())
+            matchValue = rule["match_value"];
+        if (matchValue.isNull())
+            matchValue = rule["matchValue"];
+        if (!matchByte.isNull())
+            r.matchByte = matchByte | (uint8_t)0;
+        if (!matchMask.isNull())
+            r.matchMask = matchMask | (uint8_t)0;
+        if (!matchValue.isNull())
+            r.matchValue = matchValue | (uint8_t)0;
+        if (r.matchByte > 7)
+            r.matchMask = 0;
         r.sendAfter = rule["send"] | true;
         r.opCount = 0;
 
@@ -729,6 +803,7 @@ static void pluginLoadAll()
         f = root.openNextFile();
     }
 
+    pluginResetDiagnostics();
     pluginsLocked = false;
 }
 
@@ -746,6 +821,7 @@ static bool pluginRemove(uint8_t index)
         pluginStore[i].priority = i;
     }
     pluginCount--;
+    pluginResetDiagnostics();
 
     pluginsLocked = false;
     return true;
@@ -756,6 +832,15 @@ static void pluginNormalizePriorities()
 {
     for (uint8_t i = 0; i < pluginCount; i++)
         pluginStore[i].priority = i;
+}
+
+static void pluginResetDiagnostics()
+{
+    for (uint8_t p = 0; p < pluginCount; p++)
+    {
+        for (uint8_t r = 0; r < pluginStore[p].ruleCount; r++)
+            pluginStore[p].rules[r].diag = {};
+    }
 }
 
 static void pluginSortByPriority()
@@ -789,6 +874,7 @@ static bool pluginInsert(uint8_t index, const PluginData &plugin)
     pluginStore[index] = plugin;
     pluginCount++;
     pluginNormalizePriorities();
+    pluginResetDiagnostics();
     pluginsLocked = false;
     return true;
 }
@@ -812,6 +898,7 @@ static bool pluginMove(uint8_t from, uint8_t to)
     }
     pluginStore[to] = moving;
     pluginNormalizePriorities();
+    pluginResetDiagnostics();
     pluginsLocked = false;
     return true;
 }
@@ -1007,6 +1094,53 @@ static bool pluginFrameChanged(const CanFrame &a, const CanFrame &b)
     return false;
 }
 
+static void pluginCopyDiagFrame(uint8_t *out, const CanFrame &frame)
+{
+    for (uint8_t i = 0; i < 8; i++)
+        out[i] = frame.data[i];
+}
+
+static void pluginNoteRuleMatched(PluginRule &rule, unsigned long now)
+{
+    uint32_t before = rule.diag.matchCount;
+    rule.diag.matchCount++;
+    rule.diag.lastMatchMs = now;
+    if (before == 0)
+    {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "[PLG] Rule match CAN 0x%03lX mux %d",
+                 static_cast<unsigned long>(rule.canId), static_cast<int>(rule.mux));
+        pluginLogDiagnosticsEvent(msg);
+    }
+}
+
+static void pluginNoteRuleChanged(PluginRule &rule, const CanFrame &original, const CanFrame &modified)
+{
+    rule.diag.changedCount++;
+    pluginCopyDiagFrame(rule.diag.lastOriginal, original);
+    pluginCopyDiagFrame(rule.diag.lastModified, modified);
+}
+
+static void pluginNoteRuleSend(PluginRule &rule, bool ok, unsigned long now)
+{
+    rule.diag.lastSendMs = now;
+    if (ok)
+    {
+        rule.diag.sendOkCount++;
+        return;
+    }
+
+    uint32_t before = rule.diag.sendFailCount;
+    rule.diag.sendFailCount++;
+    if (before == 0)
+    {
+        char msg[68];
+        snprintf(msg, sizeof(msg), "[PLG] Rule send failed CAN 0x%03lX mux %d",
+                 static_cast<unsigned long>(rule.canId), static_cast<int>(rule.mux));
+        pluginLogDiagnosticsEvent(msg);
+    }
+}
+
 static bool pluginHasEnabledPeriodicEmit()
 {
     for (uint8_t p = 0; p < pluginCount; p++)
@@ -1114,8 +1248,11 @@ static bool pluginProcessFrame(const CanFrame &original, CanDriver &driver)
     uint16_t emitPeriodicIntervalMs = PLUGIN_PERIODIC_INTERVAL_MAX_MS;
     PluginOp counterOps[PLUGIN_OPS_MAX];
     uint8_t counterOpCount = 0;
+    PluginRule *changedRules[PLUGIN_MAX * PLUGIN_RULES_MAX];
+    uint8_t changedRuleCount = 0;
     uint64_t claimed = 0;
     CanFrame modified = original;
+    unsigned long now = millis();
 
     for (uint8_t p = 0; p < pluginCount; p++)
     {
@@ -1124,18 +1261,21 @@ static bool pluginProcessFrame(const CanFrame &original, CanDriver &driver)
         uint64_t pluginTouched = 0;
         for (uint8_t r = 0; r < pluginStore[p].ruleCount; r++)
         {
-            const PluginRule &rule = pluginStore[p].rules[r];
+            PluginRule &rule = pluginStore[p].rules[r];
             if (rule.canId != original.id)
                 continue;
 
-            if (!pluginRuleMatchesBus(rule, original) || !pluginRuleMatchesMux(rule, original))
+            if (!pluginRuleMatchesBus(rule, original) || !pluginRuleMatchesMux(rule, original) ||
+                !pluginRuleMatchesByte(rule, original))
                 continue;
 
             processed = true;
+            pluginNoteRuleMatched(rule, now);
             if (!rule.sendAfter)
                 continue;
 
             sendRequested = true;
+            bool ruleTouched = false;
             for (uint8_t o = 0; o < rule.opCount; o++)
             {
                 const PluginOp &op = rule.ops[o];
@@ -1155,6 +1295,7 @@ static bool pluginProcessFrame(const CanFrame &original, CanDriver &driver)
                     {
                         pluginTouched |= opMask;
                         checksumPending = true;
+                        ruleTouched = true;
                     }
                     continue;
                 }
@@ -1165,13 +1306,19 @@ static bool pluginProcessFrame(const CanFrame &original, CanDriver &driver)
                         pluginTouched |= opMask;
                         if (counterOpCount < PLUGIN_OPS_MAX)
                             counterOps[counterOpCount++] = op;
+                        ruleTouched = true;
                     }
                     continue;
                 }
 
                 if (allowedMask != 0 && pluginApplyOpMasked(modified, op, allowedMask))
+                {
                     pluginTouched |= allowedMask;
+                    ruleTouched = true;
+                }
             }
+            if (ruleTouched && changedRuleCount < (PLUGIN_MAX * PLUGIN_RULES_MAX))
+                changedRules[changedRuleCount++] = &rule;
         }
         claimed |= pluginTouched;
     }
@@ -1186,11 +1333,16 @@ static bool pluginProcessFrame(const CanFrame &original, CanDriver &driver)
         CanFrame periodicFrame = modified;
         if (pluginFrameChanged(original, modified))
         {
+            for (uint8_t i = 0; i < changedRuleCount; i++)
+                pluginNoteRuleChanged(*changedRules[i], original, modified);
             uint8_t replayCount = original.id == 2047 ? pluginGetReplayCount() : 1;
             CanFrame replayFrame = modified;
             for (uint8_t i = 0; i < replayCount; i++)
             {
-                driver.send(replayFrame);
+                bool sendOk = driver.send(replayFrame);
+                unsigned long sendNow = millis();
+                for (uint8_t ruleIndex = 0; ruleIndex < changedRuleCount; ruleIndex++)
+                    pluginNoteRuleSend(*changedRules[ruleIndex], sendOk, sendNow);
                 if (i + 1 >= replayCount)
                     continue;
                 pluginAdvanceCounters(replayFrame, counterOps, counterOpCount, checksumPending);

@@ -4,20 +4,28 @@
     Logic is in the shared headers under include/.
 */
 
+#ifdef ESP_PLATFORM
+#include "platform/espidf_runtime.h"
+#else
 #include <Arduino.h>
+#endif
 #include "app.h"
 
 #ifdef DRIVER_MCP2515
 #include <SPI.h>
 #include "drivers/mcp2515_driver.h"
 #elif defined(DRIVER_ESP32_EXT_MCP2515)
+#ifndef ESP_PLATFORM
 #include <SPI.h>
+#endif
 #include "drivers/esp32_mcp2515_driver.h"
 #elif defined(DRIVER_SAME51)
 #include "drivers/same51_driver.h"
 #elif defined(DRIVER_TWAI)
 #include "drivers/twai_driver.h"
+#ifndef ESP_PLATFORM
 #include <Preferences.h>
+#endif
 #ifndef TWAI_TX_PIN
 #define TWAI_TX_PIN GPIO_NUM_5
 #endif
@@ -28,7 +36,7 @@
 #error "Define DRIVER_MCP2515, DRIVER_ESP32_EXT_MCP2515, DRIVER_SAME51, or DRIVER_TWAI in build_flags"
 #endif
 
-void setup()
+static void app_main_setup()
 {
 #ifdef DRIVER_MCP2515
     appSetup<MCP2515Driver>(std::make_unique<MCP2515Driver>(PIN_CAN_CS), "MCP25625 ready @ 500k");
@@ -36,8 +44,10 @@ void setup()
     mcpDashboardSetup(appHandler.get(), appDriver.get());
 #endif
 #elif defined(DRIVER_ESP32_EXT_MCP2515)
+#ifndef ESP_PLATFORM
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, PIN_CAN_CS);
     SPI.setFrequency(8000000);
+#endif
     auto drv = std::make_unique<ESP32_MCP2515Driver>(PIN_CAN_CS);
     MCP2515 *mcpPtr = &drv->mcp();
     appSetup<ESP32_MCP2515Driver>(std::move(drv), "ESP32 + MCP2515 ready @ 500k");
@@ -70,7 +80,7 @@ void setup()
 #endif
 }
 
-void loop()
+static void app_main_loop()
 {
 #ifdef DRIVER_MCP2515
     appLoop<MCP2515Driver>();
@@ -91,3 +101,33 @@ void loop()
 #endif
 #endif
 }
+
+#ifdef ESP_PLATFORM
+extern "C" void app_main(void)
+{
+    esp_err_t nvsErr = nvs_flash_init();
+    if (nvsErr == ESP_ERR_NVS_NO_FREE_PAGES || nvsErr == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        nvsErr = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(nvsErr);
+
+    app_main_setup();
+    while (true)
+    {
+        app_main_loop();
+        yield();
+    }
+}
+#else
+void setup()
+{
+    app_main_setup();
+}
+
+void loop()
+{
+    app_main_loop();
+}
+#endif

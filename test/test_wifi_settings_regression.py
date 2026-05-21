@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 UI_FILE = ROOT / "include" / "web" / "mcp2515_dashboard_ui.h"
 DASH_FILE = ROOT / "include" / "web" / "mcp2515_dashboard.h"
 SYNC_FILE = ROOT / "scripts" / "platformio_sync_profile.py"
+RUNTIME_FILE = ROOT / "src" / "espidf_runtime.cpp"
 
 
 class WifiSettingsRegressionTests(unittest.TestCase):
@@ -15,6 +16,11 @@ class WifiSettingsRegressionTests(unittest.TestCase):
         cls.ui = UI_FILE.read_text(encoding="utf-8")
         cls.dash = DASH_FILE.read_text(encoding="utf-8")
         cls.sync = SYNC_FILE.read_text(encoding="utf-8")
+        cls.runtime = RUNTIME_FILE.read_text(encoding="utf-8")
+
+    def assertHasUiId(self, element_id: str) -> None:
+        pattern = rf'\bid=(?:"{re.escape(element_id)}"|{re.escape(element_id)}\b)'
+        self.assertRegex(self.ui, pattern)
 
     def test_wifi_ui_has_all_expected_fields(self) -> None:
         required_ids = [
@@ -32,7 +38,7 @@ class WifiSettingsRegressionTests(unittest.TestCase):
 
         for element_id in required_ids:
             with self.subTest(element_id=element_id):
-                self.assertIn(f'id="{element_id}"', self.ui)
+                self.assertHasUiId(element_id)
 
     def test_wifi_ui_scripts_reference_existing_elements(self) -> None:
         referenced_ids = {
@@ -40,11 +46,11 @@ class WifiSettingsRegressionTests(unittest.TestCase):
             for match in re.finditer(r"\$\('([^']+)'\)", self.ui)
             if match.group(1).startswith("wifi-")
         }
-        declared_ids = {
-            match.group(1)
-            for match in re.finditer(r'id="([^"]+)"', self.ui)
-            if match.group(1).startswith("wifi-")
-        }
+        declared_ids = set()
+        for match in re.finditer(r'\bid=(?:"([^"]+)"|([A-Za-z0-9_-]+))', self.ui):
+            element_id = match.group(1) or match.group(2)
+            if element_id.startswith("wifi-"):
+                declared_ids.add(element_id)
 
         missing = sorted(referenced_ids - declared_ids)
         self.assertEqual([], missing, f"Missing WiFi UI ids: {missing}")
@@ -105,12 +111,38 @@ class WifiSettingsRegressionTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertIn(field, self.dash)
 
-    def test_ap_injection_gate_setting_is_persisted_and_exposed(self) -> None:
-        expected_ui_fields = [
-            'id="ap-gate-tgl"',
-            "saveApGate()",
-            "updateApGateControl(d)",
+    def test_wifi_config_defers_reconnect_until_after_response(self) -> None:
+        section = self.dash[
+            self.dash.index("static void handleWifiConfig()") :
+            self.dash.index("static void handleWifiDelete()")
         ]
+
+        self.assertIn("dashPrepareStaReconnect();", section)
+        self.assertIn("dashScheduleSTAConnect(1000);", section)
+        self.assertNotIn("dashConnectSTA();", section)
+        success_send = 'server.send(200, "application/json", "{\\"ok\\":true,\\"idx\\":"'
+        self.assertLess(section.index(success_send), section.index("dashScheduleSTAConnect(1000);"))
+
+    def test_wifi_scan_prepares_sta_mode_before_scan(self) -> None:
+        section = self.dash[
+            self.dash.index("static void handleWifiScan()") :
+            self.dash.index("static void dashPersistWifiSlot")
+        ]
+
+        self.assertIn("dashPrepareWifiScan();", section)
+        self.assertLess(section.index("dashPrepareWifiScan();"), section.index("WiFi.scanNetworks"))
+
+    def test_espidf_wifi_logging_is_not_info_verbose(self) -> None:
+        self.assertIn('esp_log_level_set("wifi", ESP_LOG_WARN);', self.runtime)
+        self.assertIn('esp_log_level_set("httpd_txrx", ESP_LOG_ERROR);', self.runtime)
+
+    def test_ap_injection_gate_setting_is_persisted_and_exposed(self) -> None:
+        expected_ui_ids = ["ap-gate-tgl"]
+        expected_ui_fields = ["saveApGate()", "updateApGateControl(d)"]
+
+        for element_id in expected_ui_ids:
+            with self.subTest(ui_id=element_id):
+                self.assertHasUiId(element_id)
         expected_backend_fields = [
             "INJECTION_AFTER_AP",
             '"ap_gate"',
@@ -130,6 +162,12 @@ class WifiSettingsRegressionTests(unittest.TestCase):
                 self.assertIn(field, self.dash)
 
         self.assertIn("INJECTION_AFTER_AP", self.sync)
+
+    def test_manual_ota_credentials_can_be_reset_from_dashboard(self) -> None:
+        self.assertHasUiId("ota-reset-btn")
+        self.assertIn("resetOtaCredentials()", self.ui)
+        self.assertRegex(self.ui, r"localStorage\.removeItem\([\"']otaU[\"']\)")
+        self.assertRegex(self.ui, r"localStorage\.removeItem\([\"']otaP[\"']\)")
 
 
 if __name__ == "__main__":

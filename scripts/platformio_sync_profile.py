@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 from SCons.Errors import UserError
@@ -26,6 +28,7 @@ DASHBOARD_OPTION_DEFINES = ("INJECTION_AFTER_AP", "DASH_INJECTION_AFTER_AP")
 DASHBOARD_VALUE_DEFINES = ("PLUGIN_GTW_UDS_KEY_READY",)
 CREDENTIAL_DEFINES = ("DASH_SSID", "DASH_PASS", "DASH_OTA_USER", "DASH_OTA_PASS")
 CONFIG_RELATIVE_PATH = Path("platformio_profile.h")
+EXAMPLE_CONFIG_RELATIVE_PATH = Path("platformio_profile.example.h")
 
 
 def _active_defines(text):
@@ -41,7 +44,7 @@ def _active_defines(text):
 
 
 def _string_define_values(text, names):
-    """Parse #define NAME "value" lines from the shared PlatformIO profile."""
+    """Parse #define NAME "value" lines from the local build config."""
     result = {}
     for line in text.splitlines():
         stripped = line.lstrip()
@@ -58,7 +61,7 @@ def _string_define_values(text, names):
 
 
 def _literal_define_values(text, names):
-    """Parse #define NAME value lines from the shared PlatformIO profile."""
+    """Parse #define NAME value lines from the local build config."""
     result = {}
     for line in text.splitlines():
         stripped = line.lstrip()
@@ -136,16 +139,59 @@ def _project_option_defines(env_obj):
     return normalized
 
 
+def _regenerate_dashboard(project_dir):
+    script = project_dir / "scripts" / "minify_dashboard.py"
+    src = project_dir / "include" / "web" / "mcp2515_dashboard_ui.src.h"
+    if not script.exists() or not src.exists():
+        return
+    try:
+        subprocess.run([sys.executable, str(script)], cwd=str(project_dir), check=True)
+    except subprocess.CalledProcessError as exc:
+        raise UserError(f"Dashboard UI generation failed: {exc}") from exc
+
+
 project_dir = Path(env["PROJECT_DIR"])
-config_path = project_dir / CONFIG_RELATIVE_PATH
+config_path = Path(
+    env.GetProjectOption("custom_profile_path", CONFIG_RELATIVE_PATH.as_posix())
+)
+if not config_path.is_absolute():
+    config_path = project_dir / config_path
+example_config_path = Path(
+    env.GetProjectOption(
+        "custom_example_profile_path", EXAMPLE_CONFIG_RELATIVE_PATH.as_posix()
+    )
+)
+if not example_config_path.is_absolute():
+    example_config_path = project_dir / example_config_path
+version_path = Path(env.GetProjectOption("custom_version_path", "VERSION"))
+if not version_path.is_absolute():
+    version_path = project_dir / version_path
+display_config_path = (
+    config_path.relative_to(project_dir)
+    if config_path.is_relative_to(project_dir)
+    else config_path
+)
+display_example_path = (
+    example_config_path.relative_to(project_dir)
+    if example_config_path.is_relative_to(project_dir)
+    else example_config_path
+)
+if not config_path.exists():
+    raise UserError(
+        f"Missing {display_config_path.as_posix()}. Copy "
+        f"{display_example_path.as_posix()} to {display_config_path.as_posix()}, "
+        "then edit the local build config for your board and vehicle."
+    )
 config_text = config_path.read_text(encoding="utf-8")
 active = _active_defines(config_text)
 project_defines = _project_option_defines(env)
 uses_dashboard = "ESP32_DASHBOARD" in project_defines
+if uses_dashboard:
+    _regenerate_dashboard(project_dir)
 
 _DASH_HW_MAP = {"LEGACY": 0, "HW3": 1, "HW4": 2}
 
-selected_driver = _pick_one(active, DRIVER_DEFINES, "driver define")
+profile_driver = _pick_one(active, DRIVER_DEFINES, "driver define")
 uses_dashboard_hw = uses_dashboard
 if uses_dashboard_hw:
     selected_vehicle = _pick_dashboard_default(active, VEHICLE_DEFINES, "HW3")
@@ -188,17 +234,10 @@ if len(env_driver) != 1:
         f"{', '.join(DRIVER_DEFINES)}."
     )
 
-if env_driver[0] != selected_driver:
-    raise UserError(
-        f"{CONFIG_RELATIVE_PATH.as_posix()} selects {selected_driver}, but PlatformIO env "
-        f"'{env['PIOENV']}' is configured for {env_driver[0]}. Pick the matching "
-        f"'pio run -e ...' environment or update {CONFIG_RELATIVE_PATH.as_posix()}."
-    )
-
 if not uses_dashboard_hw and env_vehicle and env_vehicle != [selected_vehicle]:
     raise UserError(
         f"PlatformIO env '{env['PIOENV']}' already defines {env_vehicle[0]}, but "
-        f"{CONFIG_RELATIVE_PATH.as_posix()} selects {selected_vehicle}. Remove the conflicting build flag."
+        f"{display_config_path.as_posix()} selects {selected_vehicle}. Remove the conflicting build flag."
     )
 
 if uses_dashboard_hw:
@@ -217,31 +256,20 @@ if missing_defines:
     env.Append(CPPDEFINES=missing_defines)
 
 # Make platformio_profile.h resolvable via #include "platformio_profile.h"
-env.Append(CPPPATH=[str(project_dir)])
+env.Append(CPPPATH=[str(config_path.parent)])
 
 # Dashboard credential sync and placeholder check
 uses_dashboard = "ESP32_DASHBOARD" in project_defines
 if uses_dashboard:
     credentials = _string_define_values(config_text, CREDENTIAL_DEFINES)
 
-    # Default credentials ("changeme") are allowed — users change them via the
+    # Default credentials ("changeme") are allowed. Users change them via the
     # dashboard WiFi Hotspot card at runtime (persisted in NVS).
     for cred_name in CREDENTIAL_DEFINES:
         if cred_name in credentials:
             env.Append(CPPDEFINES=[(cred_name, f'\\"{credentials[cred_name]}\\"')])
 
 # Inject firmware version from VERSION file
-version_file = project_dir / "VERSION"
-if version_file.exists():
-    fw_version = version_file.read_text(encoding="utf-8").strip()
+if version_path.exists():
+    fw_version = version_path.read_text(encoding="utf-8").strip()
     env.Append(CPPDEFINES=[("FIRMWARE_VERSION", f'\\"{fw_version}\\"')])
-
-print(
-    f"Synced {CONFIG_RELATIVE_PATH.as_posix()} defines for {env['PIOENV']}: "
-    + (
-        f"DASH_DEFAULT_HW={_DASH_HW_MAP[selected_vehicle]} ({selected_vehicle})"
-        if uses_dashboard_hw
-        else selected_vehicle
-    )
-    + (f", {', '.join(selected_options)}" if selected_options else "")
-)

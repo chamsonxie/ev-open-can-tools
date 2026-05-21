@@ -2,6 +2,9 @@
 
 #if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD)
 
+#ifdef ESP_PLATFORM
+#include "platform/espidf_runtime.h"
+#else
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <WiFiClientSecure.h>
@@ -9,9 +12,12 @@
 #include <WebServer.h>
 #include <ArduinoOTA.h>
 #include <Update.h>
+#endif
 #include <esp_task_wdt.h>
+#ifndef ESP_PLATFORM
 #include <Preferences.h>
 #include <SPIFFS.h>
+#endif
 #include "handlers.h"
 #include "can_helpers.h"
 #include "plugin_engine.h"
@@ -114,6 +120,13 @@ static uint8_t hw3OffsetLastRaw = 0;
 static uint32_t hw3OffsetLastSentMs = 0;
 static uint32_t hw3OffsetSlewCount = 0;
 
+#ifdef RGB_BRIGHTNESS
+static constexpr uint8_t kDashLedBrightnessDefault = RGB_BRIGHTNESS;
+#else
+static constexpr uint8_t kDashLedBrightnessDefault = 32;
+#endif
+static uint8_t dashLedBrightness = kDashLedBrightnessDefault;
+
 // WiFi AP (hotspot) — overridable at runtime
 static char apSSID[33] = "";
 static char apPass[65] = "";
@@ -130,6 +143,23 @@ static char staPass[65] = "";
 static bool staConnected = false;
 static bool staConnectAttemptActive = false;
 static bool staStaticIP = false;
+
+// Multi-SSID storage
+static constexpr uint8_t kDashMaxWifiNetworks = 4;
+struct DashWifiNetwork
+{
+    char ssid[33];
+    char pass[65];
+    bool useStatic;
+    char ip[16];
+    char gw[16];
+    char mask[16];
+    char dns[16];
+};
+static DashWifiNetwork wifiNetworks[kDashMaxWifiNetworks] = {};
+static uint8_t wifiNetworkCount = 0;
+static int8_t wifiActiveSlot = -1;    // slot currently selected for STA attempt
+static int8_t wifiNextRotateSlot = 0; // next slot to try when rotating
 static bool updateBetaChannel = false;
 static bool autoUpdateEnabled = false;
 static bool autoUpdateDone = false;            // one-shot per boot
@@ -144,6 +174,25 @@ static IPAddress staGW(0, 0, 0, 0);
 static IPAddress staMask(255, 255, 255, 0);
 static IPAddress staDNS(0, 0, 0, 0);
 
+// Multi-SSID NVS helpers (key form: w0s, w0p, w0t, w0i, w0g, w0m, w0d)
+static String dashWifiKey(uint8_t slot, const char *sub)
+{
+    String k = "w";
+    k += slot;
+    k += sub;
+    return k;
+}
+static void dashClearWifiNetwork(DashWifiNetwork &n)
+{
+    n.ssid[0] = 0;
+    n.pass[0] = 0;
+    n.useStatic = false;
+    n.ip[0] = 0;
+    n.gw[0] = 0;
+    n.mask[0] = 0;
+    n.dns[0] = 0;
+}
+static void dashRotateAndConnect();
 static void dashSwapHandler(uint8_t mode);
 static void dashApplyFilters();
 static void dashReapplyFiltersWithPlugins();
@@ -154,7 +203,9 @@ static void dashSchedulePluginStateSave(unsigned long delayMs = 750);
 static void dashFlushPluginStatesIfDue();
 
 // CAN recorder
+#ifndef REC_CAP
 #define REC_CAP 2000
+#endif
 struct RecFrame
 {
     unsigned long ts;
@@ -419,6 +470,148 @@ static bool dashInjectionActive()
     return canActive && dashApInjectionAllowed();
 }
 
+static long dashAgeMs(uint32_t seenMs, unsigned long now)
+{
+    if (seenMs == 0)
+        return -1;
+    return static_cast<long>(now - seenMs);
+}
+
+static const char *dashGateReason(bool enabled, bool allowed, bool ap, bool parked, bool summoning)
+{
+    if (!enabled)
+        return "off";
+    if (!canActive)
+        return "blocked";
+    if (!dashHandler)
+        return "unknown";
+    if (allowed)
+    {
+        if (ap)
+            return "ap_active";
+        if (parked)
+            return "parked";
+        if (summoning)
+            return "summoning";
+        return "unknown";
+    }
+    return "waiting_ap";
+}
+
+static unsigned long dashApStableStartedMs = 0;
+static bool dashLastApForLog = false;
+static bool dashLastGateLogValid = false;
+static bool dashLastGateAllowed = false;
+static bool dashLastGateAp = false;
+static bool dashLastGateParked = false;
+static bool dashLastGateSummoning = false;
+static String dashLastGateReason;
+
+static void dashLogGateStateIfChanged(bool allowed, const char *reason, bool ap, bool parked, bool summoning)
+{
+    unsigned long now = millis();
+    if (ap && !dashLastApForLog)
+    {
+        dashApStableStartedMs = now;
+        dashLog("[APGATE] AP rising edge");
+    }
+    else if (!ap && dashLastApForLog)
+    {
+        dashApStableStartedMs = 0;
+        dashLog("[APGATE] AP falling edge");
+    }
+    dashLastApForLog = ap;
+
+    String reasonStr(reason);
+    if (!dashLastGateLogValid || allowed != dashLastGateAllowed || ap != dashLastGateAp ||
+        parked != dashLastGateParked || summoning != dashLastGateSummoning ||
+        reasonStr != dashLastGateReason)
+    {
+        dashLog("[APGATE] reason=" + reasonStr + " ap=" + String(ap ? 1 : 0) +
+                " parked=" + String(parked ? 1 : 0) + " summon=" + String(summoning ? 1 : 0) +
+                " allowed=" + String(allowed ? 1 : 0));
+        dashLastGateLogValid = true;
+        dashLastGateAllowed = allowed;
+        dashLastGateAp = ap;
+        dashLastGateParked = parked;
+        dashLastGateSummoning = summoning;
+        dashLastGateReason = reasonStr;
+    }
+}
+
+static String dashGateDiagnosticsJson(unsigned long now)
+{
+    bool ap = dashHandler ? (bool)dashHandler->APActive : false;
+    bool parked = dashHandler ? (bool)dashHandler->Parked : false;
+    bool summoning = dashHandler ? (bool)dashHandler->Summoning : false;
+    bool allowed = dashInjectionActive();
+    const char *reason = dashGateReason(apInjectionGate, allowed, ap, parked, summoning);
+    dashLogGateStateIfChanged(allowed, reason, ap, parked, summoning);
+
+    unsigned long apStableMs = (ap && dashApStableStartedMs > 0) ? now - dashApStableStartedMs : 0;
+    int dasStatus = dashHandler ? (int)dashHandler->dasAutopilotStatus : -1;
+
+    String j = "\"gate\":{\"enabled\":";
+    j += apInjectionGate ? "true" : "false";
+    j += ",\"apGateEnabled\":";
+    j += apInjectionGate ? "true" : "false";
+    j += ",\"canActive\":";
+    j += canActive ? "true" : "false";
+    j += ",\"allowed\":";
+    j += allowed ? "true" : "false";
+    j += ",\"injectionAllowed\":";
+    j += allowed ? "true" : "false";
+    j += ",\"reason\":\"";
+    j += reason;
+    j += "\",\"ap\":";
+    j += ap ? "true" : "false";
+    j += ",\"APActive\":";
+    j += ap ? "true" : "false";
+    j += ",\"parked\":";
+    j += parked ? "true" : "false";
+    j += ",\"Parked\":";
+    j += parked ? "true" : "false";
+    j += ",\"summoning\":";
+    j += summoning ? "true" : "false";
+    j += ",\"Summoning\":";
+    j += summoning ? "true" : "false";
+    j += ",\"apStableMs\":";
+    j += apStableMs;
+    j += ",\"last921AgeMs\":";
+    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last921Ms, now)) : String(-1);
+    j += ",\"last280AgeMs\":";
+    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last280Ms, now)) : String(-1);
+    j += ",\"last390AgeMs\":";
+    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last390Ms, now)) : String(-1);
+    j += ",\"last1016AgeMs\":";
+    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last1016Ms, now)) : String(-1);
+    j += ",\"last1021AgeMs\":";
+    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last1021Ms, now)) : String(-1);
+    j += ",\"dasAutopilotStatus\":";
+    j += dasStatus;
+    j += ",\"hardware\":";
+    j += hwMode;
+    j += ",\"hwMode\":";
+    j += hwMode;
+    j += ",\"plugins\":[";
+    bool firstPlugin = true;
+    for (uint8_t i = 0; i < pluginCount; i++)
+    {
+        if (!pluginStore[i].enabled)
+            continue;
+        if (!firstPlugin)
+            j += ",";
+        firstPlugin = false;
+        j += "{\"name\":\"";
+        j += jsonEscape(pluginStore[i].name);
+        j += "\",\"priority\":";
+        j += String((int)pluginStore[i].priority);
+        j += "}";
+    }
+    j += "]}";
+    return j;
+}
+
 static bool dashCheckNagDisabled()
 {
     return false;
@@ -467,7 +660,7 @@ static void dashApplySpeedProfileState()
 
 static bool dashReadHw3OffsetRaw(const CanFrame &frame, uint8_t &raw)
 {
-    if (hwMode != 1 || frame.id != 1021 || frame.dlc < 2 || readMuxID(frame) != 2)
+    if ((hwMode != 1 && hwMode != 2) || frame.id != 1021 || frame.dlc < 2 || readMuxID(frame) != 2)
         return false;
 
     raw = static_cast<uint8_t>(((frame.data[1] & 0x3F) << 2) | ((frame.data[0] >> 6) & 0x03));
@@ -555,6 +748,7 @@ static void dashSavePrefs()
     prefs.putUChar("plg_rep", pluginGetReplayCount());
     prefs.putBool("h3_slw", hw3OffsetSlew);
     prefs.putUChar("h3_srt", hw3SlewRate);
+    prefs.putUChar("led_b", dashLedBrightness);
     prefs.end();
 }
 
@@ -573,7 +767,7 @@ static void dashSetCanActive(bool active, const char *reason = nullptr)
     }
 }
 
-static void dashToggleCanActive(const char *reason = nullptr)
+[[maybe_unused]] static void dashToggleCanActive(const char *reason = nullptr)
 {
     dashSetCanActive(!canActive, reason);
 }
@@ -661,6 +855,7 @@ static void dashLoadPrefs()
     pluginSetReplayCount(prefs.getUChar("plg_rep", PLUGIN_REPLAY_COUNT));
     hw3OffsetSlew = prefs.getBool("h3_slw", false);
     hw3SlewRate = dashLoadHw3SlewRate(prefs.getUChar("h3_srt", kHw3SlewRateDefault));
+    dashLedBrightness = prefs.getUChar("led_b", kDashLedBrightnessDefault);
     bool ep = prefs.getBool("eprn", true);
 
     dashApplyRuntimeState();
@@ -693,26 +888,104 @@ static void dashLoadPrefs()
         dashUseDefaultApConfig();
     }
 
-    // Load WiFi STA credentials
-    String wifiSsid = prefs.isKey("wifi_ssid") ? prefs.getString("wifi_ssid", "") : "";
-    String wifiPass = prefs.isKey("wifi_pass") ? prefs.getString("wifi_pass", "") : "";
-    if (!dashStaConfigLengthValid(wifiSsid, wifiPass) || dashStaSsidLooksCorrupt(wifiSsid))
+    // Load WiFi STA networks (multi-SSID slot array)
+    wifiNetworkCount = 0;
+    for (uint8_t i = 0; i < kDashMaxWifiNetworks; i++)
+        dashClearWifiNetwork(wifiNetworks[i]);
+
+    uint8_t storedCount = prefs.getUChar("wn_cnt", 0);
+    if (storedCount > kDashMaxWifiNetworks)
+        storedCount = kDashMaxWifiNetworks;
+
+    for (uint8_t i = 0; i < storedCount; i++)
     {
+        DashWifiNetwork &n = wifiNetworks[wifiNetworkCount];
+        String s = prefs.getString(dashWifiKey(i, "s").c_str(), "");
+        String p = prefs.getString(dashWifiKey(i, "p").c_str(), "");
+        if (!dashStaConfigLengthValid(s, p) || dashStaSsidLooksCorrupt(s) || s.length() == 0)
+            continue;
+        strlcpy(n.ssid, s.c_str(), sizeof(n.ssid));
+        strlcpy(n.pass, p.c_str(), sizeof(n.pass));
+        n.useStatic = prefs.getBool(dashWifiKey(i, "t").c_str(), false);
+        if (n.useStatic)
+        {
+            String ip = prefs.getString(dashWifiKey(i, "i").c_str(), "0.0.0.0");
+            String gw = prefs.getString(dashWifiKey(i, "g").c_str(), "0.0.0.0");
+            String mk = prefs.getString(dashWifiKey(i, "m").c_str(), "255.255.255.0");
+            String dn = prefs.getString(dashWifiKey(i, "d").c_str(), "0.0.0.0");
+            strlcpy(n.ip, ip.c_str(), sizeof(n.ip));
+            strlcpy(n.gw, gw.c_str(), sizeof(n.gw));
+            strlcpy(n.mask, mk.c_str(), sizeof(n.mask));
+            strlcpy(n.dns, dn.c_str(), sizeof(n.dns));
+        }
+        wifiNetworkCount++;
+    }
+
+    // One-shot migration from legacy single-SSID keys
+    if (wifiNetworkCount == 0 && prefs.isKey("wifi_ssid"))
+    {
+        String s = prefs.getString("wifi_ssid", "");
+        String p = prefs.getString("wifi_pass", "");
+        if (dashStaConfigLengthValid(s, p) && !dashStaSsidLooksCorrupt(s) && s.length() > 0)
+        {
+            DashWifiNetwork &n = wifiNetworks[0];
+            strlcpy(n.ssid, s.c_str(), sizeof(n.ssid));
+            strlcpy(n.pass, p.c_str(), sizeof(n.pass));
+            n.useStatic = prefs.getBool("wifi_static", false);
+            if (n.useStatic)
+            {
+                strlcpy(n.ip, prefs.getString("wifi_ip", "0.0.0.0").c_str(), sizeof(n.ip));
+                strlcpy(n.gw, prefs.getString("wifi_gw", "0.0.0.0").c_str(), sizeof(n.gw));
+                strlcpy(n.mask, prefs.getString("wifi_mask", "255.255.255.0").c_str(), sizeof(n.mask));
+                strlcpy(n.dns, prefs.getString("wifi_dns", "0.0.0.0").c_str(), sizeof(n.dns));
+            }
+            wifiNetworkCount = 1;
+            prefs.putUChar("wn_cnt", 1);
+            prefs.putString(dashWifiKey(0, "s").c_str(), s);
+            prefs.putString(dashWifiKey(0, "p").c_str(), p);
+            prefs.putBool(dashWifiKey(0, "t").c_str(), n.useStatic);
+            if (n.useStatic)
+            {
+                prefs.putString(dashWifiKey(0, "i").c_str(), String(n.ip));
+                prefs.putString(dashWifiKey(0, "g").c_str(), String(n.gw));
+                prefs.putString(dashWifiKey(0, "m").c_str(), String(n.mask));
+                prefs.putString(dashWifiKey(0, "d").c_str(), String(n.dns));
+            }
+            dashLog("[WIFI] Migrated legacy STA config to slot 0");
+        }
         prefs.remove("wifi_ssid");
         prefs.remove("wifi_pass");
-        wifiSsid = "";
-        wifiPass = "";
-        dashLog("[WIFI] Invalid saved STA config ignored");
+        prefs.remove("wifi_static");
+        prefs.remove("wifi_ip");
+        prefs.remove("wifi_gw");
+        prefs.remove("wifi_mask");
+        prefs.remove("wifi_dns");
     }
-    strlcpy(staSSID, wifiSsid.c_str(), sizeof(staSSID));
-    strlcpy(staPass, wifiPass.c_str(), sizeof(staPass));
-    staStaticIP = prefs.getBool("wifi_static", false);
-    if (staStaticIP)
+
+    // Seed staSSID/staPass with first slot for compat with existing connect path
+    if (wifiNetworkCount > 0)
     {
-        staIP.fromString(prefs.isKey("wifi_ip") ? prefs.getString("wifi_ip", "0.0.0.0") : "0.0.0.0");
-        staGW.fromString(prefs.isKey("wifi_gw") ? prefs.getString("wifi_gw", "0.0.0.0") : "0.0.0.0");
-        staMask.fromString(prefs.isKey("wifi_mask") ? prefs.getString("wifi_mask", "255.255.255.0") : "255.255.255.0");
-        staDNS.fromString(prefs.isKey("wifi_dns") ? prefs.getString("wifi_dns", "0.0.0.0") : "0.0.0.0");
+        const DashWifiNetwork &n = wifiNetworks[0];
+        strlcpy(staSSID, n.ssid, sizeof(staSSID));
+        strlcpy(staPass, n.pass, sizeof(staPass));
+        staStaticIP = n.useStatic;
+        if (n.useStatic)
+        {
+            staIP.fromString(n.ip);
+            staGW.fromString(n.gw);
+            staMask.fromString(n.mask);
+            staDNS.fromString(n.dns);
+        }
+        wifiActiveSlot = 0;
+        wifiNextRotateSlot = wifiNetworkCount > 1 ? 1 : 0;
+    }
+    else
+    {
+        staSSID[0] = 0;
+        staPass[0] = 0;
+        staStaticIP = false;
+        wifiActiveSlot = -1;
+        wifiNextRotateSlot = 0;
     }
 
     updateBetaChannel = prefs.getBool("update_beta", false);
@@ -905,7 +1178,15 @@ static WebServer server(80);
 
 static void handleRoot()
 {
-    server.send_P(200, "text/html", DASH_HTML);
+    server.sendHeader("Content-Encoding", "gzip");
+    server.sendHeader("Cache-Control", "max-age=3600");
+#ifdef ESP_PLATFORM
+    server.sendRaw(200, "text/html",
+                   reinterpret_cast<const char *>(DASH_HTML_GZ),
+                   DASH_HTML_GZ_LEN);
+#else
+    server.send_P(200, "text/html", reinterpret_cast<const char *>(DASH_HTML_GZ), DASH_HTML_GZ_LEN);
+#endif
 }
 
 static void handleStatus()
@@ -962,6 +1243,8 @@ static void handleStatus()
     j += hw3OffsetLastRaw;
     j += ",\"hw3SlewCount\":";
     j += hw3OffsetSlewCount;
+    j += ",\"ledB\":";
+    j += dashLedBrightness;
     j += ",\"can\":";
     j += canOnline ? "true" : "false";
     j += ",\"ci\":";
@@ -975,11 +1258,18 @@ static void handleStatus()
     j += ",\"fd\":";
     j += followDist;
     j += ",\"fps\":";
-    j += String(fps, 1);
+    {
+        unsigned long fpsX10 = static_cast<unsigned long>(fps * 10.0f + 0.5f);
+        j += String(fpsX10 / 10);
+        j += ".";
+        j += String(fpsX10 % 10);
+    }
     j += ",\"eflg\":";
     j += mcpEflg;
     j += ",\"up\":";
     j += (millis() - startMs) / 1000;
+    j += ",";
+    j += dashGateDiagnosticsJson(now);
     j += ",\"probe\":{\"active\":";
     j += dashWriteProbe.active ? "true" : "false";
     j += ",\"state\":";
@@ -1074,22 +1364,22 @@ static void handleConfig()
         if (pluginGetReplayCount() != previous)
             dashLog("[CFG] Plugin replay x" + String(pluginGetReplayCount()));
     }
-    if (server.hasArg("hw3OffsetSlew"))
+    if (server.hasArg("hw3OffsetSlew") || server.hasArg("offsetSlew"))
     {
-        bool v = server.arg("hw3OffsetSlew") == "1";
+        bool v = server.arg(server.hasArg("hw3OffsetSlew") ? "hw3OffsetSlew" : "offsetSlew") == "1";
         if (v != hw3OffsetSlew)
         {
             hw3OffsetSlew = v;
-            dashLog("[CFG] HW3 offset slew " + String(v ? "ON" : "OFF"));
+            dashLog("[CFG] Offset slew " + String(v ? "ON" : "OFF"));
         }
     }
-    if (server.hasArg("hw3SlewRate"))
+    if (server.hasArg("hw3SlewRate") || server.hasArg("offsetSlewRate"))
     {
-        uint8_t v = dashClampHw3SlewRate(server.arg("hw3SlewRate").toInt());
+        uint8_t v = dashClampHw3SlewRate(server.arg(server.hasArg("hw3SlewRate") ? "hw3SlewRate" : "offsetSlewRate").toInt());
         if (v != hw3SlewRate)
         {
             hw3SlewRate = v;
-            dashLog("[CFG] HW3 slew rate " + String(hw3SlewRate) + "%/s");
+            dashLog("[CFG] Offset slew rate " + String(hw3SlewRate) + "%/s");
         }
     }
     if (hwChanged)
@@ -1099,6 +1389,31 @@ static void handleConfig()
     }
     dashApplyRuntimeState();
     dashSavePrefs();
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleLedBrightness()
+{
+    if (!server.hasArg("b"))
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"err\":\"missing b\"}");
+        return;
+    }
+    long raw = server.arg("b").toInt();
+    if (raw < 0)
+        raw = 0;
+    if (raw > 255)
+        raw = 255;
+    uint8_t v = static_cast<uint8_t>(raw);
+    if (v != dashLedBrightness)
+    {
+        dashLedBrightness = v;
+        dashLog("[CFG] LED brightness " + String(v));
+        dashSavePrefs();
+#if defined(DASH_RGB_STATUS_LED)
+        appRefreshStatusLed(true);
+#endif
+    }
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -1200,13 +1515,13 @@ static void handleRecStop()
         for (int i = 0; i < n; i++)
         {
             f.print(recBuf[i].ts);
-            f.print(',');
+            f.print(",");
             f.print(recBuf[i].id);
-            f.print(',');
+            f.print(",");
             f.print(recBuf[i].dlc);
             for (int b = 0; b < 8; b++)
             {
-                f.print(',');
+                f.print(",");
                 f.print(recBuf[i].data[b]);
             }
             f.println();
@@ -1392,6 +1707,21 @@ static String dashFrameDataHex(const CanFrame &frame)
     return out;
 }
 
+static String dashDiagBytesHex(const uint8_t *bytes)
+{
+    String out;
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        if (i)
+            out += " ";
+        if (bytes[i] < 16)
+            out += "0";
+        out += String(bytes[i], HEX);
+    }
+    out.toUpperCase();
+    return out;
+}
+
 static String dashPluginTestStatusJson()
 {
     uint16_t remaining = pluginTestState.sent < pluginTestState.total
@@ -1415,7 +1745,8 @@ static bool dashPluginTestRuleMatches(const PluginRule &rule, const CanFrame &fr
 {
     if (rule.canId != frame.id)
         return false;
-    return pluginRuleMatchesBus(rule, frame) && pluginRuleMatchesMux(rule, frame);
+    return pluginRuleMatchesBus(rule, frame) && pluginRuleMatchesMux(rule, frame) &&
+           pluginRuleMatchesByte(rule, frame);
 }
 
 static bool dashBuildPluginTestFrame(const PluginRule &rule, const CanFrame &base, CanFrame &frame, String &error)
@@ -1459,7 +1790,18 @@ static void handlePluginList()
             j += ",\"mux\":" + String(rule.mux);
             j += ",\"mux_mask\":" + String(rule.muxMask);
             j += ",\"bus\":" + String(rule.busMask);
+            j += ",\"match_byte\":" + String(rule.matchByte);
+            j += ",\"match_mask\":" + String(rule.matchMask);
+            j += ",\"match_val\":" + String(rule.matchValue);
             j += ",\"send\":" + String(rule.sendAfter ? "true" : "false");
+            j += ",\"diag\":{\"match_count\":" + String(rule.diag.matchCount);
+            j += ",\"changed_count\":" + String(rule.diag.changedCount);
+            j += ",\"send_ok_count\":" + String(rule.diag.sendOkCount);
+            j += ",\"send_fail_count\":" + String(rule.diag.sendFailCount);
+            j += ",\"last_match_ms\":" + String(rule.diag.lastMatchMs);
+            j += ",\"last_send_ms\":" + String(rule.diag.lastSendMs);
+            j += ",\"last_original\":\"" + dashDiagBytesHex(rule.diag.lastOriginal) + "\"";
+            j += ",\"last_modified\":\"" + dashDiagBytesHex(rule.diag.lastModified) + "\"}";
             j += ",\"ops\":[";
             for (uint8_t o = 0; o < rule.opCount; o++)
             {
@@ -1566,6 +1908,7 @@ static bool pluginInstallJson(const String &json, const String &url)
         pluginsLocked = true;
         pluginStore[insertIndex] = temp;
         pluginNormalizePriorities();
+        pluginResetDiagnostics();
         pluginsLocked = false;
     }
     else if (!pluginInsert(pluginCount, temp))
@@ -1575,6 +1918,7 @@ static bool pluginInstallJson(const String &json, const String &url)
     }
 
     dashSaveAllPluginStates();
+    pluginResetDiagnostics();
     pluginResetPeriodicEmit();
 
     dashReapplyFiltersWithPlugins();
@@ -1645,6 +1989,7 @@ static void handlePluginToggle()
     if (idx < pluginCount)
     {
         pluginStore[idx].enabled = !pluginStore[idx].enabled;
+        pluginResetDiagnostics();
         pluginResetPeriodicEmit();
         dashSchedulePluginStateSave();
         dashReapplyFiltersWithPlugins();
@@ -1858,10 +2203,46 @@ static void dashBeginSTA()
     dashLog("[WIFI] Connecting to " + String(staSSID) + "...");
 }
 
-static void dashConnectSTA()
+static void dashPrepareStaReconnect()
 {
-    if (strlen(staSSID) == 0)
+    if (staConnectAttemptActive || staConnected || WiFi.status() == WL_CONNECTED)
+        WiFi.disconnect(false, false);
+    staConnected = false;
+    staConnectAttemptActive = false;
+    staRetryAt = 0;
+    autoUpdateEligibleAt = 0;
+}
+
+static void dashApplyWifiSlot(uint8_t slot)
+{
+    if (slot >= wifiNetworkCount)
         return;
+    const DashWifiNetwork &n = wifiNetworks[slot];
+    strlcpy(staSSID, n.ssid, sizeof(staSSID));
+    strlcpy(staPass, n.pass, sizeof(staPass));
+    staStaticIP = n.useStatic;
+    if (n.useStatic)
+    {
+        staIP.fromString(n.ip);
+        staGW.fromString(n.gw);
+        staMask.fromString(n.mask);
+        staDNS.fromString(n.dns);
+    }
+    else
+    {
+        staIP = IPAddress(0, 0, 0, 0);
+    }
+    wifiActiveSlot = static_cast<int8_t>(slot);
+}
+
+static void dashRotateAndConnect()
+{
+    if (wifiNetworkCount == 0)
+        return;
+    uint8_t next = wifiNextRotateSlot % wifiNetworkCount;
+    wifiNextRotateSlot = (next + 1) % wifiNetworkCount;
+    dashApplyWifiSlot(next);
+    dashLog("[WIFI] Trying slot " + String(next) + ": " + String(staSSID));
     dashStartAccessPoint(true);
     dashBeginSTA();
 }
@@ -1874,18 +2255,24 @@ static void dashScheduleSTAConnect(unsigned long delayMs)
     staRetryAt = millis() + delayMs;
 }
 
+static void dashPrepareWifiScan()
+{
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.setSleep(false);
+}
+
 static void performAutoUpdate(); // forward decl, defined below
 
 static void dashCheckWifi()
 {
     static unsigned long lastCheck = 0;
-    if (strlen(staSSID) == 0)
+    if (wifiNetworkCount == 0)
         return;
     unsigned long now = millis();
     if (!staConnected && !staConnectAttemptActive && staRetryAt > 0 && (long)(now - staRetryAt) >= 0)
     {
         staRetryAt = 0;
-        dashConnectSTA();
+        dashRotateAndConnect();
     }
 
     if (now - lastCheck < 5000)
@@ -1932,6 +2319,7 @@ static void dashCheckWifi()
 
 static void handleWifiScan()
 {
+    dashPrepareWifiScan();
     int n = WiFi.scanNetworks(false, false, false, 300);
     String j = "{\"networks\":[";
     for (int i = 0; i < n && i < 20; i++)
@@ -1949,60 +2337,201 @@ static void handleWifiScan()
     server.send(200, "application/json", j);
 }
 
+static void dashPersistWifiSlot(uint8_t slot)
+{
+    if (slot >= wifiNetworkCount)
+        return;
+    const DashWifiNetwork &n = wifiNetworks[slot];
+    prefs.putString(dashWifiKey(slot, "s").c_str(), String(n.ssid));
+    prefs.putString(dashWifiKey(slot, "p").c_str(), String(n.pass));
+    prefs.putBool(dashWifiKey(slot, "t").c_str(), n.useStatic);
+    if (n.useStatic)
+    {
+        prefs.putString(dashWifiKey(slot, "i").c_str(), String(n.ip));
+        prefs.putString(dashWifiKey(slot, "g").c_str(), String(n.gw));
+        prefs.putString(dashWifiKey(slot, "m").c_str(), String(n.mask));
+        prefs.putString(dashWifiKey(slot, "d").c_str(), String(n.dns));
+    }
+    else
+    {
+        prefs.remove(dashWifiKey(slot, "i").c_str());
+        prefs.remove(dashWifiKey(slot, "g").c_str());
+        prefs.remove(dashWifiKey(slot, "m").c_str());
+        prefs.remove(dashWifiKey(slot, "d").c_str());
+    }
+}
+
+static void dashRemoveWifiSlotKeys(uint8_t slot)
+{
+    prefs.remove(dashWifiKey(slot, "s").c_str());
+    prefs.remove(dashWifiKey(slot, "p").c_str());
+    prefs.remove(dashWifiKey(slot, "t").c_str());
+    prefs.remove(dashWifiKey(slot, "i").c_str());
+    prefs.remove(dashWifiKey(slot, "g").c_str());
+    prefs.remove(dashWifiKey(slot, "m").c_str());
+    prefs.remove(dashWifiKey(slot, "d").c_str());
+}
+
+// Save to slot N (0..count). idx == count means append (new). Reconnect on save.
 static void handleWifiConfig()
 {
-    if (server.hasArg("ssid"))
+    if (!server.hasArg("ssid"))
     {
-        String ssid = server.arg("ssid");
-        String pass = server.arg("pass");
-        if (!dashStaConfigLengthValid(ssid, pass) || dashStaSsidLooksCorrupt(ssid))
+        server.send(200, "application/json", "{\"ok\":true}");
+        return;
+    }
+
+    String ssid = server.arg("ssid");
+    String pass = server.arg("pass");
+    if (!dashStaConfigLengthValid(ssid, pass) || dashStaSsidLooksCorrupt(ssid) || ssid.length() == 0)
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid SSID or password\"}");
+        return;
+    }
+
+    int idx = -1;
+    if (server.hasArg("idx"))
+        idx = server.arg("idx").toInt();
+    if (idx < 0 || idx > wifiNetworkCount)
+        idx = wifiNetworkCount; // append
+
+    if (idx == kDashMaxWifiNetworks)
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"Max networks reached\"}");
+        return;
+    }
+
+    DashWifiNetwork &n = wifiNetworks[idx];
+    dashClearWifiNetwork(n);
+    strlcpy(n.ssid, ssid.c_str(), sizeof(n.ssid));
+    strlcpy(n.pass, pass.c_str(), sizeof(n.pass));
+    n.useStatic = server.hasArg("static") && server.arg("static") == "1";
+    if (n.useStatic)
+    {
+        strlcpy(n.ip, server.arg("ip").c_str(), sizeof(n.ip));
+        strlcpy(n.gw, server.arg("gw").c_str(), sizeof(n.gw));
+        strlcpy(n.mask, server.arg("mask").c_str(), sizeof(n.mask));
+        strlcpy(n.dns, server.arg("dns").c_str(), sizeof(n.dns));
+    }
+
+    if (idx == wifiNetworkCount)
+        wifiNetworkCount++;
+
+    prefs.begin(PREFS_NS, false);
+    prefs.putUChar("wn_cnt", wifiNetworkCount);
+    dashPersistWifiSlot(idx);
+    prefs.end();
+
+    dashLog("[WIFI] Saved slot " + String(idx) + ": " + ssid);
+
+    // Switch to newly saved slot and connect
+    wifiNextRotateSlot = idx;
+    dashApplyWifiSlot(idx);
+    dashPrepareStaReconnect();
+
+    server.send(200, "application/json", "{\"ok\":true,\"idx\":" + String(idx) + "}");
+    dashScheduleSTAConnect(1000);
+}
+
+static void handleWifiDelete()
+{
+    if (!server.hasArg("idx"))
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing idx\"}");
+        return;
+    }
+    int idx = server.arg("idx").toInt();
+    if (idx < 0 || idx >= wifiNetworkCount)
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"bad idx\"}");
+        return;
+    }
+
+    String removedSsid = wifiNetworks[idx].ssid;
+    // Shift slots down
+    for (uint8_t i = idx; i + 1 < wifiNetworkCount; i++)
+        wifiNetworks[i] = wifiNetworks[i + 1];
+    wifiNetworkCount--;
+    dashClearWifiNetwork(wifiNetworks[wifiNetworkCount]);
+
+    // Rewrite all slot keys
+    prefs.begin(PREFS_NS, false);
+    prefs.putUChar("wn_cnt", wifiNetworkCount);
+    for (uint8_t i = 0; i < wifiNetworkCount; i++)
+        dashPersistWifiSlot(i);
+    for (uint8_t i = wifiNetworkCount; i < kDashMaxWifiNetworks; i++)
+        dashRemoveWifiSlotKeys(i);
+    prefs.end();
+
+    dashLog("[WIFI] Deleted slot " + String(idx) + ": " + removedSsid);
+
+    // Adjust active slot if needed
+    if (wifiActiveSlot == idx)
+    {
+        wifiActiveSlot = -1;
+        if (staConnectAttemptActive || staConnected)
         {
-            server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid SSID or password\"}");
-            return;
+            WiFi.disconnect(false, false);
+            staConnectAttemptActive = false;
+            staConnected = false;
         }
-        strlcpy(staSSID, ssid.c_str(), sizeof(staSSID));
-        strlcpy(staPass, pass.c_str(), sizeof(staPass));
-
-        prefs.begin(PREFS_NS, false);
-        prefs.putString("wifi_ssid", ssid);
-        prefs.putString("wifi_pass", pass);
-
-        // Static IP config
-        if (server.hasArg("static") && server.arg("static") == "1")
+        if (wifiNetworkCount > 0)
         {
-            staStaticIP = true;
-            staIP.fromString(server.arg("ip"));
-            staGW.fromString(server.arg("gw"));
-            staMask.fromString(server.arg("mask"));
-            staDNS.fromString(server.arg("dns"));
-            prefs.putBool("wifi_static", true);
-            prefs.putString("wifi_ip", server.arg("ip"));
-            prefs.putString("wifi_gw", server.arg("gw"));
-            prefs.putString("wifi_mask", server.arg("mask"));
-            prefs.putString("wifi_dns", server.arg("dns"));
+            wifiNextRotateSlot = 0;
+            dashRotateAndConnect();
         }
         else
         {
-            staStaticIP = false;
-            prefs.putBool("wifi_static", false);
+            staSSID[0] = 0;
+            staPass[0] = 0;
+            dashStartAccessPoint(false);
         }
-        prefs.end();
-
-        staConnected = false;
-        dashConnectSTA();
     }
+    else if (wifiActiveSlot > idx)
+    {
+        wifiActiveSlot--;
+    }
+    if (wifiNextRotateSlot >= wifiNetworkCount)
+        wifiNextRotateSlot = 0;
+
     server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleWifiNetworks()
+{
+    String j = "{\"max\":";
+    j += kDashMaxWifiNetworks;
+    j += ",\"count\":";
+    j += wifiNetworkCount;
+    j += ",\"active\":";
+    j += wifiActiveSlot;
+    j += ",\"networks\":[";
+    for (uint8_t i = 0; i < wifiNetworkCount; i++)
+    {
+        if (i)
+            j += ",";
+        const DashWifiNetwork &n = wifiNetworks[i];
+        j += "{\"idx\":";
+        j += i;
+        j += ",\"ssid\":\"" + jsonEscape(n.ssid) + "\"";
+        j += ",\"hasPass\":" + String(strlen(n.pass) > 0 ? "true" : "false");
+        j += ",\"static\":" + String(n.useStatic ? "true" : "false");
+        if (n.useStatic)
+        {
+            j += ",\"ip\":\"" + String(n.ip) + "\"";
+            j += ",\"gw\":\"" + String(n.gw) + "\"";
+            j += ",\"mask\":\"" + String(n.mask) + "\"";
+            j += ",\"dns\":\"" + String(n.dns) + "\"";
+        }
+        j += "}";
+    }
+    j += "]}";
+    server.send(200, "application/json", j);
 }
 
 static void handleWifiStatus()
 {
-    Preferences p;
-    bool stored = false;
-    if (p.begin(PREFS_NS, false))
-    {
-        stored = p.isKey("wifi_ssid") && p.getString("wifi_ssid", "").length() > 0;
-        p.end();
-    }
+    bool stored = wifiNetworkCount > 0;
     bool connectedNow = WiFi.status() == WL_CONNECTED;
     IPAddress staIp = WiFi.localIP();
     bool hasStaIp = static_cast<uint32_t>(staIp) != 0;
@@ -2014,6 +2543,8 @@ static void handleWifiStatus()
     j += connected ? "true" : "false";
     j += ",\"ssid\":\"" + jsonEscape(activeSsid) + "\"";
     j += ",\"stored\":" + String(stored ? "true" : "false");
+    j += ",\"count\":" + String(wifiNetworkCount);
+    j += ",\"active\":" + String(wifiActiveSlot);
     if (connected)
         j += ",\"ip\":\"" + staIp.toString() + "\"";
     j += ",\"static\":" + String(staStaticIP ? "true" : "false");
@@ -2487,7 +3018,7 @@ static void handleUpdateCheck()
         String name = asset["name"] | "";
         if (name == artifact)
         {
-            downloadUrl = asset["browser_download_url"].as<String>();
+            downloadUrl = String(asset["browser_download_url"] | "");
             break;
         }
     }
@@ -2663,7 +3194,7 @@ static void performAutoUpdate()
         String name = asset["name"] | "";
         if (name == artifact)
         {
-            downloadUrl = asset["browser_download_url"].as<String>();
+            downloadUrl = String(asset["browser_download_url"] | "");
             break;
         }
     }
@@ -2839,7 +3370,7 @@ static void webTask(void *)
         ArduinoOTA.handle();
         server.handleClient();
         dashCheckWifi();
-        vTaskDelay(pdMS_TO_TICKS(2));
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -2893,6 +3424,8 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
 #endif
     if (dashDriver)
         dashDriver->onSendFrame = mcpDashOnTxFrame;
+    pluginSetDiagnosticsLogger([](const char *message)
+                               { dashLog(String(message)); });
     startMs = millis();
     fpsLastMs = millis();
     dashResetWriteProbe();
@@ -2936,6 +3469,7 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/", HTTP_GET, handleRoot);
     server.on("/status", HTTP_GET, handleStatus);
     server.on("/config", HTTP_POST, handleConfig);
+    server.on("/led_brightness", HTTP_POST, handleLedBrightness);
     server.on("/logging", HTTP_POST, handleLoggingConfig);
     server.on("/frames", HTTP_GET, handleFrames);
     server.on("/log", HTTP_GET, handleLog);
@@ -2965,6 +3499,8 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/wifi_scan", HTTP_GET, handleWifiScan);
     server.on("/wifi_config", HTTP_POST, handleWifiConfig);
     server.on("/wifi_status", HTTP_GET, handleWifiStatus);
+    server.on("/wifi_networks", HTTP_GET, handleWifiNetworks);
+    server.on("/wifi_delete", HTTP_POST, handleWifiDelete);
     server.on("/update_check", HTTP_GET, handleUpdateCheck);
     server.on("/update_install", HTTP_POST, handleUpdateInstall);
     server.on("/update_beta", HTTP_POST, handleUpdateBeta);
@@ -2974,7 +3510,11 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.begin();
     if (strlen(staSSID) > 0)
         dashScheduleSTAConnect(kDashStaBootDelayMs);
-    xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, 2, nullptr, 0);
+#if CONFIG_FREERTOS_UNICORE
+    xTaskCreate(webTask, "web", 8192, nullptr, 1, nullptr);
+#else
+    xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, 1, nullptr, 1);
+#endif
     Serial.println("[WEB] Dashboard: http://" + WiFi.softAPIP().toString());
     dashLog("[BOOT] ev-open-can-tools ready");
 }
@@ -2993,6 +3533,9 @@ static void mcpDashboardLoop()
         canOnline = false;
         dashLog("[CAN] Bus OFFLINE (timeout)");
     }
+#if defined(DASH_RGB_STATUS_LED)
+    appRefreshStatusLed(false);
+#endif
 }
 
 #endif

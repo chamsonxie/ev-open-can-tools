@@ -92,15 +92,6 @@ body:
     validations:
       required: false
 
-  - type: input
-    id: summary
-    attributes:
-      label: Summary
-      description: Short description of the issue. If you copied a support block, add the one-line symptom here too.
-      placeholder: Briefly describe the issue
-    validations:
-      required: true
-
   - type: textarea
     id: steps
     attributes:

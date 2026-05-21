@@ -242,4 +242,9 @@ pyrightconfig.json
 .tests
 .tmpcoverage_build/
 platformio_profile.h
+sdkconfig.*
+!sdkconfig.defaults
 .pi-lens
+.claude
+managed_components/
+dependencies.lock

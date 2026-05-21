@@ -2,7 +2,7 @@
 
 [Project Home](../) | [Documentation](index.md) | [Dashboard Guide](dashboard.md) | [Plugin System](plugins.md) | [Release Notes](../CHANGELOG.md)
 
-The project is PlatformIO-only. Pick the correct board environment in `platformio.ini`, then choose the matching driver and default vehicle mode in `platformio_profile.h`.
+The project is PlatformIO-only. Pick the correct board environment in `platformio.ini`, then choose the matching driver and default vehicle mode in your local `platformio_profile.h`.
 
 ## Supported PlatformIO Environments
 
@@ -24,12 +24,20 @@ Some CAN boards and adapters include an onboard 120 ohm termination resistor. Wh
 
 ## Selecting Driver, Vehicle, And Defaults
 
-You can edit [`platformio_profile.h`](../platformio_profile.h) directly:
+Create your local build config first:
+
+```bash
+cp platformio_profile.example.h platformio_profile.h
+```
+
+Then edit `platformio_profile.h`:
 
 - choose one driver define
 - choose one vehicle define
 - set initial hotspot and OTA credentials
 - uncomment optional feature defines when you want compile-time defaults changed
+
+`platformio_profile.h` is ignored by git. Keep personal board choices, WiFi credentials, OTA credentials, and gateway keys there. Commit changes to `platformio_profile.example.h` only when you are changing the template for everyone.
 
 You can also use the helper script:
 

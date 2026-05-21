@@ -7,6 +7,147 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-05-21
+
+Stable release bundling the `3.0.0-beta.1` through `3.0.0-beta.9` changes.
+
+### Added
+
+- ESP-IDF native build path for supported targets, including ESP-IDF runtime shims, IDF RGB LED support, dashboard gzip serving, and multi-SSID WiFi.
+- Status LED brightness control, AP Gate Diagnostics, CAN driver diagnostics, HW4 Offset Slew support, and plugin rule diagnostics in the dashboard and support reports.
+- Plugin rule byte-mask matching and the example `0x370` duplicate-counter plugin.
+- Manual firmware upload control to clear saved OTA credentials from browser local storage.
+
+### Changed
+
+- ESP-IDF builds are pinned through PlatformIO `platformio/espressif32` 7.0.0, with legacy Arduino boards moved under `legacy-arduino`.
+- Release and CI workflows cover supported ESP-IDF and legacy Arduino targets.
+- Dashboard assets are minified and served as gzip-compressed content to reduce flash usage.
+
+### Fixed
+
+- Dashboard CAN recorder CSV rows now use real comma separators.
+- ESP-IDF dashboard serving avoids large `String` copies and httpd stack overflows.
+- WiFi scan/save flows are more reliable in AP+STA mode.
+- Release workflows handle legacy Arduino board builds from `legacy-arduino`.
+- Plugin `or_byte` and `and_byte` operations apply their configured values correctly.
+- Dashboard Support button placement is generated from the footer source HTML.
+
+## [3.0.0-beta.9] - 2026-05-19
+
+### Added
+
+- Plugin rule diagnostics now report match, change, and transmit counters plus last original/modified frames in `/plugins` and support reports.
+
+### Fixed
+
+- Dashboard CAN recorder CSV rows now use real comma separators.
+
+## [3.0.0-beta.8] - 2026-05-18
+
+### Added
+
+- Added AP Gate Diagnostics to /status and the Support report to debug false Active injection states.
+
+## [3.0.0-beta.7] - 2026-05-18
+
+### Added
+
+- Add HW4 support for the web-native Offset Slew limiter while preserving existing HW3-compatible settings keys.
+
+## [3.0.0-beta.6] - 2026-05-18
+
+### Added
+
+- CAN driver diagnostics are now exposed through the driver interface and logged at startup.
+- TWAI builds now report TX/RX pins, driver state, queue counters, bus errors, recovery count, rejected frame count, and last ESP-IDF CAN errors.
+
+### Fixed
+
+- Added a regression test proving `or_byte` and `and_byte` plugin operations apply their configured values correctly.
+- Moved the dashboard Support button from the Configuration card into the footer source HTML.
+
+## [3.0.0-beta.5] - 2026-05-04
+
+### Added
+
+- RGB status LED now reflects runtime state at a glance: solid green = injecting + at least one client connected, blinking green = injecting with no client connected, solid red = injection stopped + connected, blinking red = injection stopped + no client. Solid blue indicates an in-progress OTA firmware update. "Connected" is true when any station is associated with the AP or when the STA uplink is up.
+
+## [3.0.0-beta.4] - 2026-05-04
+
+### Added
+
+- Manual firmware upload now has a dashboard button to clear saved OTA username/password credentials from browser local storage.
+
+## [3.0.0-beta.3] - 2026-05-04
+
+### Added
+
+- Plugin rules can now include an additional byte-mask match (`match_byte`, `match_mask`, `match_val`) so plugins can target specific bit states without adding dedicated firmware toggles.
+- Added an example `0x370` duplicate-counter plugin that matches byte 4 bits 7:6 clear, forces byte 3 to `0xB6`, sets byte 4 bit 6, increments byte 6 low-nibble counter, and recomputes byte 7 checksum.
+
+### Fixed
+
+- ESP-IDF WiFi Internet saves now defer reconnect until after the HTTP response, preventing the dashboard request from being dropped while AP+STA mode changes channels.
+- Switching saved WiFi networks now disconnects any existing STA association before connecting to the new SSID, avoiding repeated `sta is connected` / deauth log spam.
+- WiFi scan now prepares AP+STA mode before scanning, so scans work when the device is otherwise in AP-only mode.
+- ESP-IDF WiFi/httpd/netif component logs are reduced to warning/error levels to keep dashboard serial logs readable.
+
+## [3.0.0-beta.2] - 2026-05-04
+
+### Changed
+
+- Pin ESP-IDF builds to ESP-IDF v6.0.1 through PlatformIO `platformio/espressif32` 7.0.0 and keep legacy Arduino boards in `legacy-arduino`.
+- Build all supported ESP-IDF and legacy Arduino targets in GitHub Actions, including release artifacts for AtomS3 Mini CAN Base and Waveshare ESP32-S3 RS485/CAN.
+
+### Fixed
+
+- Release and test workflows now run legacy Arduino board builds from `legacy-arduino`, so RP2040 and Feather M4 CI no longer look for removed root Arduino environments.
+- CI installs the Python package needed by ESP-IDF 6.0.1 tooling and skips clang-format on the generated dashboard payload header.
+
+## [3.0.0-beta.1] - 2026-05-03
+
+### Added
+
+- ESP-IDF 5.5 native build path replacing the Arduino framework on supported targets (M5Stack AtomS3 Lite verified). Adds `src/espidf_runtime.cpp` plus `include/platform/espidf_runtime.h` providing Arduino-compatible shims (`String`, `WiFi`, `WebServer`, `Preferences`, `Update`, `HTTPClient`, `SPIFFS`, etc.) on top of ESP-IDF APIs.
+- ESP-IDF `led_strip` (RMT) implementation of the on-board RGB status LED so the AtomS3 Lite indicator works under IDF (green = injecting, red = idle).
+- "Status LED Brightness" subsection in the Configuration card with a slider and number input (0–255), persisted in NVS (`led_b`) and applied live via `/led_brightness`.
+- Multi-SSID WiFi support — up to 4 saved networks. The device tries each in turn until one connects (e.g. home + phone hotspot). New endpoints `/wifi_networks`, `/wifi_delete`; `/wifi_config` accepts an `idx` argument to update a specific slot. Legacy single-SSID NVS keys auto-migrate to slot 0 on first boot.
+- `scripts/minify_dashboard.py` — minifies the dashboard HTML/CSS/JS (csscompressor + terser + htmlmin) and emits a gzipped `DASH_HTML_GZ[]` payload served with `Content-Encoding: gzip`. Dashboard source-of-truth moved to `include/web/mcp2515_dashboard_ui.src.h`.
+
+### Changed
+
+- Flash usage on `m5stack-atoms3-mini-can-base` reduced from 79.0 % (1,243,217 B) to 64.8 % (1,019,835 B) — about 223 KB saved with no feature loss. Drivers:
+  - `CONFIG_COMPILER_OPTIMIZATION_SIZE=y` (was `OPTIMIZATION_DEBUG`),
+  - `CONFIG_NEWLIB_NANO_FORMAT=y` plus integer formatting for the FPS field,
+  - `CONFIG_ESP_ERR_TO_NAME_LOOKUP=n`,
+  - `CONFIG_BOOTLOADER_LOG_LEVEL_ERROR=y`,
+  - gzipped dashboard HTML (≈120 KB raw rodata → ≈30 KB compressed).
+- `WebServer::send_P` no longer copies the body into a `String` (which OOM'd on the 130 KB dashboard HTML and aborted the httpd task). It now streams large responses in 4 KB chunks via `httpd_resp_send_chunk` directly from the source pointer (`sendRaw`).
+- `WebServer::begin()` bumps the IDF httpd task stack to 16 KB and moves the per-request URL-query buffer to the heap, fixing a stack overflow on the first dashboard hit.
+
+### Fixed
+
+- `httpd` task stack overflow on the first client connection on ESP-IDF builds.
+- `bad_alloc` / `terminate` reboot when serving the root dashboard page over the soft-AP on ESP-IDF builds.
+
+## [2.6.0-beta.1] - 2026-04-30
+
+### Added
+
+- Added MCP2515 recovery regression coverage for the RP2040 CAN driver.
+- Added `platformio_profile.example.h` as the committed build-config template.
+
+### Changed
+
+- `platformio_profile.h` is now treated as a local-only build config and ignored by git. Copy `platformio_profile.example.h` to `platformio_profile.h` before building, then keep board choices, credentials, and keys in the local file.
+- Build documentation and helper-script errors now describe `platformio_profile.h` as the local build config and point fresh checkouts to the example file.
+
+### Fixed
+
+- RP2040 MCP2515 builds now recover the CAN controller after repeated TX failures or MCP2515 bus-off (`EFLG_TXBO`) instead of staying silent until power-cycled.
+- CI test and release builds now create their local `platformio_profile.h` from `platformio_profile.example.h` before applying per-board build profiles.
+
 ## [2.5.2] - 2026-04-29
 
 Stable release bundling the AP Injection Gate Smart Summon fixes from `2.5.2-beta.1` through `2.5.2-beta.6`.

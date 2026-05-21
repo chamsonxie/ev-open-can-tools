@@ -1,7 +1,11 @@
 #pragma once
 
+#ifdef ESP_PLATFORM
+#include "drivers/espidf_mcp2515.h"
+#else
 #include <SPI.h>
 #include <mcp2515.h>
+#endif
 #include <memory>
 #include "../can_frame_types.h"
 #include "can_driver.h"

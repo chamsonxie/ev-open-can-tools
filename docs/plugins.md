@@ -59,8 +59,17 @@ Each rule matches incoming CAN frames by ID, optional bus, and optional mux inde
 | `bus` | string, integer, or array | no | Bus pin: `CH`, `VEH`, `PARTY`, a comma-separated string such as `"CH,VEH"`, a bitmask (`1=CH`, `2=VEH`, `4=PARTY`), or an array of names. Omit to match any bus. Frames with unknown bus still match pinned rules for backwards compatibility. Single-bus builds can enforce pins by defining `CAN_BUS_DEFAULT=CAN_BUS_CH`, `CAN_BUS_DEFAULT=CAN_BUS_VEH`, or `CAN_BUS_DEFAULT=CAN_BUS_PARTY`. |
 | `mux` | integer | no | Mux value to match in byte 0. `-1` or omit to match any mux. Values `0..7` default to legacy low-3-bit matching. Values `8..255` default to full-byte matching. |
 | `mux_mask` | integer | no | Byte-0 mask used with `mux`. Matching is `(byte0 & mux_mask) == (mux & mux_mask)`. Use `7` for low-3-bit muxes, `15` for low-nibble muxes, and `255` for full-byte DBC muxes. Alias: `muxMask`. |
+| `match_byte` | integer | no | Optional byte index `0..7` for an additional byte-mask match. Alias: `matchByte`. |
+| `match_mask` | integer | no | Optional mask for `match_byte`. `0` or omitted disables the extra byte match. Alias: `matchMask`. |
+| `match_val` | integer | no | Optional value used with `match_byte`/`match_mask`. Matching is `(byte[match_byte] & match_mask) == (match_val & match_mask)`. Aliases: `match_value`, `matchValue`. |
 | `ops` | array | yes | Array of operations to apply (see below). |
 | `send` | boolean | no | Include this rule in the composed frame sent on the CAN bus. Defaults to `true`. |
+
+Instead of flat `match_*` fields, you can use:
+
+```json
+"match": { "byte": 4, "mask": 192, "val": 0 }
+```
 
 ### Operations
 
@@ -179,6 +188,32 @@ Always place this as the **last** operation if the frame uses checksums.
 Example JSON files that match the dashboard features removed from the main Features card are stored in: https://github.com/ev-open-can-tools/ev-open-can-tools-plugins 
 
 Use only the files that match your hardware and intended behavior. The firmware supports at most 8 installed plugins at a time.
+
+### 0x370 duplicate-counter example
+
+This rule listens for CAN ID `0x370` (`880`) and only matches frames where byte 4 bits 7:6 are both clear. It forces byte 3 to `0xB6`, sets byte 4 bit 6, increments the lower nibble of byte 6, recomputes byte 7 checksum, and sends the modified frame immediately.
+
+```json
+{
+  "name": "0x370 Duplicate Counter",
+  "version": "1.0",
+  "rules": [
+    {
+      "id": 880,
+      "match_byte": 4,
+      "match_mask": 192,
+      "match_val": 0,
+      "ops": [
+        { "type": "set_byte", "byte": 3, "val": 182 },
+        { "type": "set_bit", "bit": 38, "val": 1 },
+        { "type": "counter", "byte": 6, "mask": 15, "step": 1 },
+        { "type": "checksum" }
+      ],
+      "send": true
+    }
+  ]
+}
+```
 
 ## Installing plugins
 

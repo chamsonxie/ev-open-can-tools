@@ -7,10 +7,17 @@
 #include "handlers.h"
 
 #ifndef NATIVE_BUILD
+#ifdef ESP_PLATFORM
+#include "platform/espidf_runtime.h"
+#else
 #include <Arduino.h>
 #endif
-#if defined(DASH_RGB_STATUS_LED) && !defined(NATIVE_BUILD)
+#endif
+#if defined(DASH_RGB_STATUS_LED) && !defined(NATIVE_BUILD) && !defined(ESP_PLATFORM)
 #include <esp32-hal-rgb-led.h>
+#endif
+#if defined(DASH_RGB_STATUS_LED) && defined(ESP_PLATFORM)
+#include <led_strip.h>
 #endif
 
 #ifndef PIN_LED
@@ -62,7 +69,23 @@ static void appPollInjectionToggleButton();
 #if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD) && defined(DASH_RGB_STATUS_LED)
 static void appWriteStatusLed(uint8_t red, uint8_t green, uint8_t blue)
 {
-#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+#ifdef ESP_PLATFORM
+    static led_strip_handle_t strip = nullptr;
+    if (!strip)
+    {
+        led_strip_config_t scfg = {};
+        scfg.strip_gpio_num = PIN_LED;
+        scfg.max_leds = 1;
+        scfg.led_model = LED_MODEL_WS2812;
+        scfg.color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB;
+        led_strip_rmt_config_t rcfg = {};
+        rcfg.resolution_hz = 10 * 1000 * 1000;
+        if (led_strip_new_rmt_device(&scfg, &rcfg, &strip) != ESP_OK)
+            return;
+    }
+    led_strip_set_pixel(strip, 0, red, green, blue);
+    led_strip_refresh(strip);
+#elif defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
     rgbLedWrite(PIN_LED, red, green, blue);
 #else
     neopixelWrite(PIN_LED, red, green, blue);
@@ -73,18 +96,40 @@ static void appRefreshStatusLed(bool force)
 {
     static bool known = false;
     static bool lastInjecting = false;
-#ifdef RGB_BRIGHTNESS
-    constexpr uint8_t kStatusLedLevel = RGB_BRIGHTNESS;
-#else
-    constexpr uint8_t kStatusLedLevel = 32;
-#endif
+    static bool lastConnected = false;
+    static bool lastOta = false;
+    static uint8_t lastLevel = 0;
+    static bool lastEmittedOn = true;
 
     bool injecting = canActive;
-    if (!force && known && lastInjecting == injecting)
+    bool connected = (WiFi.softAPgetStationNum() > 0) || (WiFi.status() == WL_CONNECTED);
+    bool ota = Update.isRunning();
+    uint8_t level = dashLedBrightness;
+
+    // Solid when connected (or OTA), 1 Hz blink otherwise.
+    bool blinkOn = (millis() % 1000UL) < 500UL;
+    bool emittedOn = (connected || ota) ? true : blinkOn;
+
+    if (!force && known && lastInjecting == injecting && lastConnected == connected && lastOta == ota && lastLevel == level && lastEmittedOn == emittedOn)
         return;
 
-    appWriteStatusLed(injecting ? 0 : kStatusLedLevel, injecting ? kStatusLedLevel : 0, 0);
+    uint8_t r = 0, g = 0, b = 0;
+    if (emittedOn)
+    {
+        if (ota)
+            b = level; // OTA: solid blue
+        else if (injecting)
+            g = level;
+        else
+            r = level;
+    }
+    appWriteStatusLed(r, g, b);
+
     lastInjecting = injecting;
+    lastConnected = connected;
+    lastOta = ota;
+    lastLevel = level;
+    lastEmittedOn = emittedOn;
     known = true;
 }
 #endif
@@ -138,12 +183,21 @@ static void appSetup(std::unique_ptr<Driver> drv, const char *readyMsg)
 #endif
 
     appDriver = std::move(drv);
-    if (!appDriver->init())
+    bool canInitOk = appDriver->init();
+    if (!canInitOk)
     {
         Serial.println("CAN init failed");
     }
+    char canDiag[640];
+    appDriver->diagnosticsSummary(canDiag, sizeof(canDiag));
+    Serial.print("[CAN] ");
+    Serial.println(canDiag);
 
     appDriver->setFilters(appHandler->filterIds(), appHandler->filterIdCount());
+    appDriver->diagnosticsSummary(canDiag, sizeof(canDiag));
+    Serial.print("[CAN] after filters: ");
+    Serial.println(canDiag);
+
     if constexpr (Driver::kSupportsISR)
     {
         appDriver->enableInterrupt(canISR);
@@ -159,6 +213,9 @@ static void appSetup(std::unique_ptr<Driver> drv, const char *readyMsg)
 template <typename Driver>
 static void appLoop()
 {
+#if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD) && defined(DASH_RGB_STATUS_LED)
+    appRefreshStatusLed(false);
+#endif
 #if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD)
     if (Update.isRunning())
     {

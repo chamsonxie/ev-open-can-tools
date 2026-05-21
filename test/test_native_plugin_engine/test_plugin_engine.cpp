@@ -140,6 +140,117 @@ void test_gtw_silent_is_disabled_without_custom_key()
     TEST_ASSERT_EQUAL_UINT32(2047, plugin.filterIds[0]);
 }
 
+void test_byte_match_gates_0x370_counter_duplicate_plugin()
+{
+    installPlugin(R"JSON({
+      "name":"370 duplicate",
+      "rules":[{
+        "id":880,
+        "match_byte":4,
+        "match_mask":192,
+        "match_val":0,
+        "ops":[
+          {"type":"set_byte","byte":3,"val":182},
+          {"type":"set_bit","bit":38,"val":1},
+          {"type":"counter","byte":6,"mask":15,"step":1},
+          {"type":"checksum"}
+        ]
+      }]
+    })JSON");
+
+    MockDriver driver;
+    CanFrame frame = {.id = 880};
+    frame.data[0] = 0x10;
+    frame.data[1] = 0x20;
+    frame.data[2] = 0x30;
+    frame.data[3] = 0x40;
+    frame.data[4] = 0x01;
+    frame.data[5] = 0x50;
+    frame.data[6] = 0x2F;
+    frame.data[7] = 0x00;
+
+    TEST_ASSERT_TRUE(pluginProcessFrame(frame, driver));
+    TEST_ASSERT_EQUAL_size_t(1, driver.sent.size());
+    TEST_ASSERT_EQUAL_UINT32(880, driver.sent[0].id);
+    TEST_ASSERT_EQUAL_HEX8(0xB6, driver.sent[0].data[3]);
+    TEST_ASSERT_EQUAL_HEX8(0x41, driver.sent[0].data[4]);
+    TEST_ASSERT_EQUAL_HEX8(0x20, driver.sent[0].data[6]);
+    TEST_ASSERT_EQUAL_HEX8(computeVehicleChecksum(driver.sent[0]), driver.sent[0].data[7]);
+
+    CanFrame ignored = frame;
+    ignored.data[4] = 0x40;
+    TEST_ASSERT_FALSE(pluginProcessFrame(ignored, driver));
+    TEST_ASSERT_EQUAL_size_t(1, driver.sent.size());
+
+    ignored.data[4] = 0x80;
+    TEST_ASSERT_FALSE(pluginProcessFrame(ignored, driver));
+    TEST_ASSERT_EQUAL_size_t(1, driver.sent.size());
+}
+
+void test_or_and_byte_ops_apply_expected_values()
+{
+    installPlugin(R"JSON({
+      "name":"byte ops",
+      "rules":[{
+        "id":777,
+        "ops":[
+          {"type":"or_byte","byte":1,"val":10},
+          {"type":"and_byte","byte":2,"val":240}
+        ]
+      }]
+    })JSON");
+
+    MockDriver driver;
+    CanFrame frame = {.id = 777};
+    frame.dlc = 8;
+    frame.data[1] = 0x50;
+    frame.data[2] = 0xFF;
+
+    TEST_ASSERT_TRUE(pluginProcessFrame(frame, driver));
+    TEST_ASSERT_EQUAL_size_t(1, driver.sent.size());
+    TEST_ASSERT_EQUAL_HEX8(0x5A, driver.sent[0].data[1]);
+    TEST_ASSERT_EQUAL_HEX8(0xF0, driver.sent[0].data[2]);
+}
+
+void test_hw3_fsd_activation_rule_reports_diagnostics()
+{
+    installPlugin(R"JSON({
+      "name":"FSD Activation HW3",
+      "rules":[{
+        "id":1021,
+        "mux":0,
+        "match_byte":5,
+        "match_mask":255,
+        "match_val":1,
+        "ops":[{"type":"set_bit","bit":46,"val":1}]
+      }]
+    })JSON");
+
+    MockDriver driver;
+    CanFrame frame = {.id = 1021};
+    frame.dlc = 8;
+    frame.data[0] = 0x00;
+    frame.data[1] = 0x00;
+    frame.data[2] = 0x00;
+    frame.data[3] = 0xD0;
+    frame.data[4] = 0x20;
+    frame.data[5] = 0x01;
+    frame.data[6] = 0x02;
+    frame.data[7] = 0x80;
+
+    TEST_ASSERT_TRUE(pluginProcessFrame(frame, driver));
+    TEST_ASSERT_EQUAL_size_t(1, driver.sent.size());
+    TEST_ASSERT_EQUAL_HEX8(0x41, driver.sent[0].data[5]);
+
+    PluginRule &rule = pluginStore[0].rules[0];
+    TEST_ASSERT_EQUAL_UINT32(1, rule.diag.matchCount);
+    TEST_ASSERT_EQUAL_UINT32(1, rule.diag.changedCount);
+    TEST_ASSERT_EQUAL_UINT32(1, rule.diag.sendOkCount);
+    TEST_ASSERT_EQUAL_UINT32(0, rule.diag.sendFailCount);
+    TEST_ASSERT_EQUAL_HEX8(0x01, rule.diag.lastOriginal[5]);
+    TEST_ASSERT_EQUAL_HEX8(0x41, rule.diag.lastModified[5]);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -147,5 +258,8 @@ int main()
     RUN_TEST(test_bus_pin_matches_known_bus_and_allows_unknown_bus);
     RUN_TEST(test_filter_ids_keep_sixteen_rule_ids_when_gtw_silent_is_disabled_without_key);
     RUN_TEST(test_gtw_silent_is_disabled_without_custom_key);
+    RUN_TEST(test_byte_match_gates_0x370_counter_duplicate_plugin);
+    RUN_TEST(test_or_and_byte_ops_apply_expected_values);
+    RUN_TEST(test_hw3_fsd_activation_rule_reports_diagnostics);
     return UNITY_END();
 }
