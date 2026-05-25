@@ -33,3 +33,10 @@
 // #define BYPASS_TLSSC_REQUIREMENT    // Always enable drivepilot without requiring "Traffic Light and Stop Sign Control" toggle
 // #define NAG_KILLER                  // Suppress Autosteer "hands on wheel" nag (CAN 880 counter+1 echo, X179 pin 2/3)
 // #define ENHANCED_AUTOPILOT          // Enable UI_applyEceR79 override on HW3/HW4 and summon on HW4
+
+// ── BLUETOOTH (ESP32 TWAI only) ──────────────────────────────────
+// Uncomment to enable the Bluetooth Classic SPP bridge.
+// Pairs with any Android CAN monitor app that speaks SLCAN over BT serial.
+// Device name shown during pairing can be changed via the dashboard.
+// #define BLUETOOTH_SERIAL
+// #define BT_DEVICE_NAME "EV-CAN"  // optional: override default device name
