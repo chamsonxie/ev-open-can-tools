@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-05-25
+
+### Fixed
+
+- Republished the stable 3.0 release through the normal main-branch release workflow so firmware assets can be attached before the release is published immutable.
+
 ## [3.0.0] - 2026-05-21
 
 Stable release bundling the `3.0.0-beta.1` through `3.0.0-beta.9` changes.
