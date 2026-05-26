@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2-beta.1] - 2026-05-26
+
+### Fixed
+
+- AP Injection Gate now treats live INVALID/SNA gear values as unknown instead of Park, preventing Start After AP plugin injection while AP is inactive unless the car is definitively in Park or Summoning.
+
 ## [3.0.1] - 2026-05-25
 
 ### Fixed
