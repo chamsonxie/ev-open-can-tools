@@ -60,6 +60,14 @@ inline bool enhancedAutopilotInjectionAllowed(bool adEnabled)
     return !kInjectionAfterApBuildEnabled || adEnabled;
 }
 
+inline bool injectionGateOpenWithStableAp(bool apActive, bool parked, bool summoning,
+                                          uint32_t apStableMs, uint32_t requiredApStableMs)
+{
+    if (parked || summoning)
+        return true;
+    return apActive && apStableMs >= requiredApStableMs;
+}
+
 inline uint8_t readMuxID(const CanFrame &frame)
 {
     return frame.data[0] & 0x07;

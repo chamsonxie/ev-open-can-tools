@@ -214,6 +214,22 @@ void test_gear_helpers_classify_known_values()
     TEST_ASSERT_FALSE(isKnownGear(7));
 }
 
+void test_injection_gate_stable_ap_blocks_ap_rising_edge()
+{
+    TEST_ASSERT_FALSE(injectionGateOpenWithStableAp(true, false, false, 999, 1000));
+}
+
+void test_injection_gate_stable_ap_allows_after_delay()
+{
+    TEST_ASSERT_TRUE(injectionGateOpenWithStableAp(true, false, false, 1000, 1000));
+}
+
+void test_injection_gate_stable_ap_still_allows_park_and_summon()
+{
+    TEST_ASSERT_TRUE(injectionGateOpenWithStableAp(false, true, false, 0, 1000));
+    TEST_ASSERT_TRUE(injectionGateOpenWithStableAp(false, false, true, 0, 1000));
+}
+
 // --- setSpeedProfileV12V13 ---
 
 void test_setSpeedProfileV12V13_sets_profile_0()
@@ -328,6 +344,9 @@ int main()
     RUN_TEST(test_isVehicleParked_false_for_sna);
     RUN_TEST(test_isVehicleParked_false_for_invalid);
     RUN_TEST(test_gear_helpers_classify_known_values);
+    RUN_TEST(test_injection_gate_stable_ap_blocks_ap_rising_edge);
+    RUN_TEST(test_injection_gate_stable_ap_allows_after_delay);
+    RUN_TEST(test_injection_gate_stable_ap_still_allows_park_and_summon);
 
     RUN_TEST(test_setSpeedProfileV12V13_sets_profile_0);
     RUN_TEST(test_setSpeedProfileV12V13_sets_profile_1);

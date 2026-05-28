@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2-beta.2] - 2026-05-28
+
+### Fixed
+
+- Dashboard AP Injection Gate now waits for AP to remain stable for one second before allowing plugin injection through the AP path, reducing activation-edge injection during FSD/AP engagement transients while keeping Park and Summon injection behavior unchanged.
+
 ## [3.0.2-beta.1] - 2026-05-26
 
 ### Fixed
