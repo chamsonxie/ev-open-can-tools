@@ -50,4 +50,3 @@
 
 - Crystal frequencies: 8MHz or 16MHz (set via `MCP_CRYSTAL_FREQ` define)
 - SPI pin mapping per board (CS, SCK, MISO, MOSI, interrupt)
-- Recovery logic on TX failure / bus-off in `test_native_mcp2515_recovery`

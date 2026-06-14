@@ -43,7 +43,6 @@ pio test -e native_nag
 pio test -e native_injection_after_ap
 pio test -e native_bypass_tlssc_requirement
 pio test -e native_log_buffer
-pio test -e native_mcp2515_recovery
 
 # Run Python tests
 python -m unittest discover -s test -p 'test_*.py'

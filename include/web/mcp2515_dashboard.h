@@ -71,8 +71,6 @@ static MCP2515 *dashMcp = nullptr;
 #endif
 
 static unsigned long rxCount = 0;
-static unsigned long txCount = 0;
-static unsigned long txErrCount = 0;
 static unsigned long lastFrameMs = 0;
 static unsigned long startMs = 0;
 static bool canOnline = false;
@@ -83,8 +81,6 @@ static unsigned long fpsLastMs = 0;
 static float fps = 0.0f;
 
 static unsigned long muxRx[4] = {};
-static unsigned long muxTx[4] = {};
-static unsigned long muxErr[4] = {};
 
 #if defined(DRIVER_ESP32_EXT_MCP2515)
 static uint8_t mcpEflg = 0;
@@ -649,10 +645,6 @@ static void handleStatus()
     j += canOnline ? "true" : "false";
     j += ",\"rx\":";
     j += rxCount;
-    j += ",\"tx\":";
-    j += txCount;
-    j += ",\"txerr\":";
-    j += txErrCount;
     j += ",\"fd\":";
     j += followDist;
     j += ",\"fps\":";
@@ -671,9 +663,7 @@ static void handleStatus()
     {
         if (i)
             j += ",";
-        j += "{\"rx\":" + String(muxRx[i]) +
-             ",\"tx\":" + String(muxTx[i]) +
-             ",\"err\":" + String(muxErr[i]) + "}";
+        j += "{\"rx\":" + String(muxRx[i]) + "}";
     }
     j += "]}";
     server.send(200, "application/json", j);
@@ -796,11 +786,7 @@ static void handleLog()
 static void handleResetStats()
 {
     rxCount = 0;
-    txCount = 0;
-    txErrCount = 0;
     memset(muxRx, 0, sizeof(muxRx));
-    memset(muxTx, 0, sizeof(muxTx));
-    memset(muxErr, 0, sizeof(muxErr));
     dashLog("[CFG] Stats reset");
     server.send(200, "application/json", "{\"ok\":true}");
 }

@@ -11,11 +11,6 @@
 #include <cassert>
 #include <string.h>
 
-// TWAIDriver requires CAN_READ_ONLY — send is forcibly disabled.
-#ifndef CAN_READ_ONLY
-#error "CAN_READ_ONLY must be defined when using TWAIDriver"
-#endif
-
 class TWAIDriver : public CanDriver
 {
 public:
@@ -113,13 +108,6 @@ public:
             return true;
         }
 
-        return false;
-    }
-
-    bool send(const CanFrame &frame) override
-    {
-        (void)frame;
-        assert(false && "send() is disabled in read-only mode (CAN_READ_ONLY)");
         return false;
     }
 
