@@ -1,0 +1,16 @@
+项目结构
+src/main.cpp              ← 🚪 入口点 (setup() + loop())
+src/espidf_runtime.cpp    ← ESP-IDF Arduino 兼容垫片
+include/
+  ├── app.h               ← 模板化应用框架
+  ├── shared_types.h      ← Shared<T> 类型（原子/普通）
+  ├── can_frame_types.h   ← CanFrame, CanDriver 抽象
+  ├── can_helpers.h       ← 校验和、位操作等
+  ├── handlers.h          ← Tesla 车型处理（Legacy/HW3/HW4/Nag）
+  ├── plugin_engine.h     ← JSON 插件系统
+  └── log_buffer.h        ← 日志环形缓冲
+  drivers/                ← TWAI / MCP2515 / Mock 等驱动
+  web/                    ← Dashboard Web 服务器
+  platform/               ← ESP-IDF 垫片
+
+

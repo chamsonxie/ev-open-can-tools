@@ -24,7 +24,7 @@ OPTIONAL_DEFINES = (
     "ENHANCED_AUTOPILOT",
 )
 DASHBOARD_OPTION_DEFINES = ("INJECTION_AFTER_AP", "DASH_INJECTION_AFTER_AP")
-# Synced for dashboard builds only (defines with literal values).
+# 仅同步仪表板构建（具有字面值的定义）。
 DASHBOARD_VALUE_DEFINES = ("PLUGIN_GTW_UDS_KEY_READY",)
 CREDENTIAL_DEFINES = ("DASH_SSID", "DASH_PASS", "DASH_OTA_USER", "DASH_OTA_PASS")
 CONFIG_RELATIVE_PATH = Path("platformio_profile.h")
@@ -44,7 +44,7 @@ def _active_defines(text):
 
 
 def _string_define_values(text, names):
-    """Parse #define NAME "value" lines from the local build config."""
+    """从本地构建配置中解析 #define NAME "value" 行。"""
     result = {}
     for line in text.splitlines():
         stripped = line.lstrip()
@@ -61,7 +61,7 @@ def _string_define_values(text, names):
 
 
 def _literal_define_values(text, names):
-    """Parse #define NAME value lines from the local build config."""
+    """从本地构建配置中解析 #define NAME value 行。"""
     result = {}
     for line in text.splitlines():
         stripped = line.lstrip()
@@ -255,21 +255,20 @@ for item in sync_defines:
 if missing_defines:
     env.Append(CPPDEFINES=missing_defines)
 
-# Make platformio_profile.h resolvable via #include "platformio_profile.h"
+# 使 platformio_profile.h 可通过 #include "platformio_profile.h" 解析
 env.Append(CPPPATH=[str(config_path.parent)])
 
-# Dashboard credential sync and placeholder check
+# 仪表板凭据同步和占位符检查
 uses_dashboard = "ESP32_DASHBOARD" in project_defines
 if uses_dashboard:
     credentials = _string_define_values(config_text, CREDENTIAL_DEFINES)
 
-    # Default credentials ("changeme") are allowed. Users change them via the
-    # dashboard WiFi Hotspot card at runtime (persisted in NVS).
+    # 默认凭据（"changeme"）允许存在。用户通过仪表板WiFi热点卡片在运行时修改它们（持久化存储在NVS中）。
     for cred_name in CREDENTIAL_DEFINES:
         if cred_name in credentials:
             env.Append(CPPDEFINES=[(cred_name, f'\\"{credentials[cred_name]}\\"')])
 
-# Inject firmware version from VERSION file
+# 从 VERSION 文件注入固件版本
 if version_path.exists():
     fw_version = version_path.read_text(encoding="utf-8").strip()
     env.Append(CPPDEFINES=[("FIRMWARE_VERSION", f'\\"{fw_version}\\"')])

@@ -1,8 +1,7 @@
 #include <unity.h>
 #include <cstdint>
 
-// Extracted filter computation logic from TWAIDriver::setFilters() so we can
-// unit-test the math without the ESP-IDF TWAI hardware API.
+// 从 TWAIDriver::setFilters() 中提取过滤器计算逻辑，以便无需 ESP-IDF TWAI 硬件 API 即可对数学进行单元测试。
 struct TwaiFilterResult
 {
     uint32_t acceptance_code;
@@ -35,7 +34,7 @@ static bool filterAccepts(const TwaiFilterResult &f, uint32_t id)
 void setUp() {}
 void tearDown() {}
 
-// --- Single ID filter (Legacy-like: 2 IDs far apart) ---
+// --- 单 ID 过滤器（类 Legacy：2 个相隔较远的 ID）---
 
 void test_twai_filter_legacy_accepts_id_69()
 {
@@ -51,7 +50,7 @@ void test_twai_filter_legacy_accepts_id_1006()
     TEST_ASSERT_TRUE(filterAccepts(f, 1006));
 }
 
-// --- HW3 filter (Autopilot IDs) ---
+// --- HW3 过滤器（自动驾驶 ID）---
 
 void test_twai_filter_hw3_accepts_id_1016()
 {
@@ -81,7 +80,7 @@ void test_twai_filter_hw3_rejects_unrelated_id()
     TEST_ASSERT_FALSE(filterAccepts(f, 1000));
 }
 
-// --- HW4 filter (ISA + Autopilot IDs) ---
+// --- HW4 过滤器（ISA + 自动驾驶 ID）---
 
 void test_twai_filter_hw4_accepts_id_921()
 {
@@ -118,7 +117,7 @@ void test_twai_filter_hw4_rejects_distant_id()
     TEST_ASSERT_FALSE(filterAccepts(f, 100));
 }
 
-// --- HW3: tight filter rejects multiple unrelated IDs ---
+// --- HW3：紧密过滤器拒绝多个无关 ID ---
 
 void test_twai_filter_hw3_rejects_id_500()
 {
@@ -134,7 +133,7 @@ void test_twai_filter_hw3_rejects_id_0()
     TEST_ASSERT_FALSE(filterAccepts(f, 0));
 }
 
-// --- HW4: another rejection ---
+// --- HW4：又一次拒绝 ---
 
 void test_twai_filter_hw4_rejects_id_500()
 {
@@ -143,7 +142,7 @@ void test_twai_filter_hw4_rejects_id_500()
     TEST_ASSERT_FALSE(filterAccepts(f, 500));
 }
 
-// --- Legacy: wide gap means wider mask (false positives expected) ---
+// --- Legacy：大间距意味着更宽的掩码（预期会有误报）---
 
 void test_twai_filter_legacy_rejects_id_500()
 {
@@ -152,7 +151,7 @@ void test_twai_filter_legacy_rejects_id_500()
     TEST_ASSERT_FALSE(filterAccepts(f, 500));
 }
 
-// --- Single ID ---
+// --- 单 ID ---
 
 void test_twai_filter_single_id_exact_match()
 {
@@ -163,7 +162,7 @@ void test_twai_filter_single_id_exact_match()
     TEST_ASSERT_FALSE(filterAccepts(f, 499));
 }
 
-// --- Mask correctness ---
+// --- 掩码正确性 ---
 
 void test_twai_filter_single_id_mask_is_exact()
 {

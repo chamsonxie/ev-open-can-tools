@@ -92,8 +92,8 @@ inline uint8_t readVehicleGear(const CanFrame &frame)
     return static_cast<uint8_t>((frame.data[7] >> 3) & 0x07);
 }
 
-// DI_systemStatus (CAN ID 280 / 0x118) DI_gear: byte 2 bits 5-7
-// Values: 0=INVALID, 1=P, 2=R, 3=N, 4=D, 7=SNA
+// DI_systemStatus（CAN ID 280 / 0x118）DI_gear：字节2的第5-7位
+// 值：0=无效, 1=P, 2=R, 3=N, 4=D, 7=SNA
 inline uint8_t readDIGear(const CanFrame &frame)
 {
     return static_cast<uint8_t>((frame.data[2] >> 5) & 0x07);
@@ -101,11 +101,10 @@ inline uint8_t readDIGear(const CanFrame &frame)
 
 inline bool isVehicleParked(uint8_t gear)
 {
-    // Treat true Park (1) as parked. Also treat INVALID (0) and SNA (7) as
-    // parked: when the DI is asleep (e.g. car locked with Sentry on) it
-    // reports SNA, and we want the AP Injection Gate to open so summon-
-    // unlock injection runs on cold approach. Driving states (R=2, N=3,
-    // D=4) and unknown mid-range values are not parked.
+    // 将真正的驻车（1）视为已驻车。同时将无效（0）和SNA（7）视为已驻车：
+    // 当DI休眠时（例如车辆锁闭且哨兵模式开启），它报告SNA，
+    // 我们希望AP注入门打开，以便在冷接近时运行召唤解锁注入。
+    // 行驶状态（R=2, N=3, D=4）和未知的中间值不被视为已驻车。
     return gear == 0 || gear == 1 || gear == 7;
 }
 
@@ -159,7 +158,7 @@ inline uint8_t computeVehicleChecksum(const CanFrame &frame, uint8_t checksumByt
 inline void setBit(CanFrame &frame, int bit, bool value)
 {
     if (bit < 0 || bit >= 64)
-        return; // bounds guard: CanFrame.data is 8 bytes
+        return; // 边界保护：CanFrame.data为8字节
     int byteIndex = bit / 8;
     int bitIndex = bit % 8;
     uint8_t mask = static_cast<uint8_t>(1U << bitIndex);

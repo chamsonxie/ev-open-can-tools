@@ -8,7 +8,13 @@
 #pragma GCC diagnostic pop
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#include <cassert>
 #include <string.h>
+
+// TWAIDriver requires CAN_READ_ONLY — send is forcibly disabled.
+#ifndef CAN_READ_ONLY
+#error "CAN_READ_ONLY must be defined when using TWAIDriver"
+#endif
 
 class TWAIDriver : public CanDriver
 {
@@ -25,9 +31,9 @@ public:
         if (!mutex_)
             return false;
 
-        g_config_ = TWAI_GENERAL_CONFIG_DEFAULT(txPin_, rxPin_, TWAI_MODE_NORMAL);
+        g_config_ = TWAI_GENERAL_CONFIG_DEFAULT(txPin_, rxPin_, TWAI_MODE_LISTEN_ONLY);
         g_config_.rx_queue_len = 32;
-        g_config_.tx_queue_len = 16;
+        g_config_.tx_queue_len = 1;
 
         t_config_ = TWAI_TIMING_CONFIG_500KBITS();
         f_config_ = TWAI_FILTER_CONFIG_ACCEPT_ALL();
@@ -56,7 +62,7 @@ public:
         nextFilter.single_filter = true;
 
         lock();
-        // TWAI only has a mask filter; sparse ID sets can pass false positives.
+        // TWAI 只有掩码过滤器；稀疏 ID 集可能通过误报。
         exactFilterCount_ = (count < kMaxExactFilters) ? count : kMaxExactFilters;
         for (uint8_t i = 0; i < exactFilterCount_; i++)
             exactFilterIds_[i] = ids[i];
@@ -112,37 +118,9 @@ public:
 
     bool send(const CanFrame &frame) override
     {
-        lock();
-        if (!driverOK_)
-        {
-            unlock();
-            if (onSendFrame)
-                onSendFrame(frame, false);
-            return false;
-        }
-
-        twai_message_t msg = {};
-        uint8_t dlc = (frame.dlc <= 8) ? frame.dlc : 8;
-        msg.identifier = frame.id;
-        msg.data_length_code = dlc;
-        memcpy(msg.data, frame.data, dlc);
-
-        // Short timeout (2ms): modified frames should not be dropped, but
-        // long blocks (10ms) risk overflowing the 32-deep RX queue.
-        // At 500kbps, ~8 frames arrive in 2ms — queue handles this fine.
-        esp_err_t txErr = twai_transmit(&msg, pdMS_TO_TICKS(2));
-        bool ok = txErr == ESP_OK;
-        if (!ok)
-        {
-            lastTransmitErr_ = txErr;
-            transmitErrors_++;
-            if (isBusOffLocked())
-                recoverWithCooldownLocked();
-        }
-        unlock();
-        if (onSendFrame)
-            onSendFrame(frame, ok);
-        return ok;
+        (void)frame;
+        assert(false && "send() is disabled in read-only mode (CAN_READ_ONLY)");
+        return false;
     }
 
     void diagnosticsJson(char *out, size_t outLen) const override
@@ -154,18 +132,17 @@ public:
         bool hasStatus = driverInstalled_ && twai_get_status_info(&status) == ESP_OK;
         const twai_status_info_t &s = hasStatus ? status : lastStatus_;
         snprintf(out, outLen,
-                 "{\"type\":\"twai\",\"txPin\":%d,\"rxPin\":%d,\"ok\":%s,\"installed\":%s,\"state\":\"%s\",\"msgsToTx\":%u,\"msgsToRx\":%u,\"txErrCounter\":%u,\"rxErrCounter\":%u,\"txFailed\":%u,\"rxMissed\":%u,\"rxOverrun\":%u,\"arbLost\":%u,\"busErrors\":%u,\"recoveries\":%u,\"rxErrors\":%u,\"txErrors\":%u,\"rejected\":%u,\"lastInstallErr\":%d,\"lastStartErr\":%d,\"lastRxErr\":%d,\"lastTxErr\":%d}",
+                 "{\"type\":\"twai\",\"txPin\":%d,\"rxPin\":%d,\"ok\":%s,\"installed\":%s,\"state\":\"%s\",\"msgsToRx\":%u,\"rxErrCounter\":%u,\"rxMissed\":%u,\"rxOverrun\":%u,\"arbLost\":%u,\"busErrors\":%u,\"recoveries\":%u,\"rxErrors\":%u,\"rejected\":%u,\"lastInstallErr\":%d,\"lastStartErr\":%d,\"lastRxErr\":%d}",
                  static_cast<int>(txPin_), static_cast<int>(rxPin_), driverOK_ ? "true" : "false",
                  driverInstalled_ ? "true" : "false", twaiStateName(s.state),
-                 static_cast<unsigned int>(s.msgs_to_tx), static_cast<unsigned int>(s.msgs_to_rx),
-                 static_cast<unsigned int>(s.tx_error_counter), static_cast<unsigned int>(s.rx_error_counter),
-                 static_cast<unsigned int>(s.tx_failed_count), static_cast<unsigned int>(s.rx_missed_count),
+                 static_cast<unsigned int>(s.msgs_to_rx),
+                 static_cast<unsigned int>(s.rx_error_counter),
+                 static_cast<unsigned int>(s.rx_missed_count),
                  static_cast<unsigned int>(s.rx_overrun_count), static_cast<unsigned int>(s.arb_lost_count),
                  static_cast<unsigned int>(s.bus_error_count), static_cast<unsigned int>(recoveries_),
-                 static_cast<unsigned int>(receiveErrors_), static_cast<unsigned int>(transmitErrors_),
+                 static_cast<unsigned int>(receiveErrors_),
                  static_cast<unsigned int>(rejectedFrames_), static_cast<int>(lastInstallErr_),
-                 static_cast<int>(lastStartErr_), static_cast<int>(lastReceiveErr_),
-                 static_cast<int>(lastTransmitErr_));
+                 static_cast<int>(lastStartErr_), static_cast<int>(lastReceiveErr_));
     }
 
     void diagnosticsSummary(char *out, size_t outLen) const override
@@ -177,18 +154,17 @@ public:
         bool hasStatus = driverInstalled_ && twai_get_status_info(&status) == ESP_OK;
         const twai_status_info_t &s = hasStatus ? status : lastStatus_;
         snprintf(out, outLen,
-                 "TWAI tx=%d rx=%d ok=%s installed=%s state=%s msgsToRx=%u msgsToTx=%u txErrCounter=%u rxErrCounter=%u txFailed=%u rxMissed=%u rxOverrun=%u arbLost=%u busErrors=%u recoveries=%u rxErrors=%u txErrors=%u rejected=%u lastInstallErr=%d lastStartErr=%d lastRxErr=%d lastTxErr=%d",
+                 "TWAI tx=%d rx=%d ok=%s installed=%s state=%s msgsToRx=%u rxErrCounter=%u rxMissed=%u rxOverrun=%u arbLost=%u busErrors=%u recoveries=%u rxErrors=%u rejected=%u lastInstallErr=%d lastStartErr=%d lastRxErr=%d",
                  static_cast<int>(txPin_), static_cast<int>(rxPin_), driverOK_ ? "yes" : "no",
                  driverInstalled_ ? "yes" : "no", twaiStateName(s.state),
-                 static_cast<unsigned int>(s.msgs_to_rx), static_cast<unsigned int>(s.msgs_to_tx),
-                 static_cast<unsigned int>(s.tx_error_counter), static_cast<unsigned int>(s.rx_error_counter),
-                 static_cast<unsigned int>(s.tx_failed_count), static_cast<unsigned int>(s.rx_missed_count),
+                 static_cast<unsigned int>(s.msgs_to_rx),
+                 static_cast<unsigned int>(s.rx_error_counter),
+                 static_cast<unsigned int>(s.rx_missed_count),
                  static_cast<unsigned int>(s.rx_overrun_count), static_cast<unsigned int>(s.arb_lost_count),
                  static_cast<unsigned int>(s.bus_error_count), static_cast<unsigned int>(recoveries_),
-                 static_cast<unsigned int>(receiveErrors_), static_cast<unsigned int>(transmitErrors_),
+                 static_cast<unsigned int>(receiveErrors_),
                  static_cast<unsigned int>(rejectedFrames_), static_cast<int>(lastInstallErr_),
-                 static_cast<int>(lastStartErr_), static_cast<int>(lastReceiveErr_),
-                 static_cast<int>(lastTransmitErr_));
+                 static_cast<int>(lastStartErr_), static_cast<int>(lastReceiveErr_));
     }
 
 private:
@@ -320,9 +296,7 @@ private:
     esp_err_t lastInstallErr_ = ESP_OK;
     esp_err_t lastStartErr_ = ESP_OK;
     esp_err_t lastReceiveErr_ = ESP_OK;
-    esp_err_t lastTransmitErr_ = ESP_OK;
     uint32_t receiveErrors_ = 0;
-    uint32_t transmitErrors_ = 0;
     uint32_t rejectedFrames_ = 0;
     uint32_t recoveries_ = 0;
 };

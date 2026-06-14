@@ -11,7 +11,7 @@ void setUp()
 }
 void tearDown() {}
 
-// --- setBit ---
+// --- 设置位 ---
 
 void test_setBit_sets_bit0_of_byte0()
 {
@@ -30,14 +30,14 @@ void test_setBit_sets_bit7_of_byte0()
 void test_setBit_sets_bit_in_byte5()
 {
     CanFrame f = {};
-    setBit(f, 46, true); // byte 5, bit 6
+    setBit(f, 46, true); // 字节 5, 位 6
     TEST_ASSERT_EQUAL_HEX8(0x40, f.data[5]);
 }
 
 void test_setBit_sets_bit_in_byte7()
 {
     CanFrame f = {};
-    setBit(f, 60, true); // byte 7, bit 4
+    setBit(f, 60, true); // 字节 7, 位 4
     TEST_ASSERT_EQUAL_HEX8(0x10, f.data[7]);
 }
 
@@ -45,7 +45,7 @@ void test_setBit_clears_bit()
 {
     CanFrame f = {};
     f.data[2] = 0xFF;
-    setBit(f, 19, false); // byte 2, bit 3
+    setBit(f, 19, false); // 字节 2, 位 3
     TEST_ASSERT_EQUAL_HEX8(0xF7, f.data[2]);
 }
 
@@ -54,12 +54,12 @@ void test_setBit_does_not_affect_other_bytes()
     CanFrame f = {};
     f.data[0] = 0xAA;
     f.data[1] = 0xBB;
-    setBit(f, 8, true); // byte 1, bit 0
+    setBit(f, 8, true); // 字节 1, 位 0
     TEST_ASSERT_EQUAL_HEX8(0xAA, f.data[0]);
     TEST_ASSERT_EQUAL_HEX8(0xBB, f.data[1]);
 }
 
-// --- readMuxID ---
+// --- 读取 MUX ID ---
 
 void test_readMuxID_extracts_lower_3_bits()
 {
@@ -71,7 +71,7 @@ void test_readMuxID_extracts_lower_3_bits()
 void test_readMuxID_masks_upper_bits()
 {
     CanFrame f = {};
-    f.data[0] = 0xFA; // binary: 11111010 -> lower 3 = 010 = 2
+    f.data[0] = 0xFA; // 二进制：11111010 -> 低 3 位 = 010 = 2
     TEST_ASSERT_EQUAL_UINT8(2, readMuxID(f));
 }
 
@@ -89,12 +89,12 @@ void test_readMuxID_max_value()
     TEST_ASSERT_EQUAL_UINT8(7, readMuxID(f));
 }
 
-// --- isADSelectedInUI ---
+// --- 判断 UI 中 AD 是否已选择 ---
 
 void test_isADSelectedInUI_true_when_bit5_set()
 {
     CanFrame f = {};
-    f.data[4] = 0x20; // bit 5 set
+    f.data[4] = 0x20; // 位 5 已设置
     TEST_ASSERT_TRUE(isADSelectedInUI(f));
 }
 
@@ -108,7 +108,7 @@ void test_isADSelectedInUI_false_when_bit5_clear()
 void test_isADSelectedInUI_ignores_other_bits()
 {
     CanFrame f = {};
-    f.data[4] = 0xDF; // all bits set except bit 5
+    f.data[4] = 0xDF; // 除位 5 外所有位均已设置
     TEST_ASSERT_FALSE(isADSelectedInUI(f));
 }
 
@@ -119,12 +119,12 @@ void test_isADSelectedInUI_true_with_other_bits()
     TEST_ASSERT_TRUE(isADSelectedInUI(f));
 }
 
-// --- readGTWAutopilot ---
+// --- 读取网关自动驾驶状态 ---
 
 void test_readGTWAutopilot_extracts_bits_42_to_44()
 {
     CanFrame f = {};
-    f.data[5] = 0x0C; // 0b011 at bits 42-44
+    f.data[5] = 0x0C; // 位 42-44 处为 0b011
     TEST_ASSERT_EQUAL_UINT8(3, readGTWAutopilot(f));
 }
 
@@ -135,7 +135,7 @@ void test_readGTWAutopilot_masks_other_bits()
     TEST_ASSERT_EQUAL_UINT8(7, readGTWAutopilot(f));
 }
 
-// --- DAS autopilot status ---
+// --- DAS 自动驾驶状态 ---
 
 void test_readDASAutopilotStatus_extracts_lower_nibble()
 {
@@ -156,7 +156,7 @@ void test_isDASAutopilotActive_false_for_available_state()
     TEST_ASSERT_FALSE(isDASAutopilotActive(2));
 }
 
-// --- Gear state ---
+// --- 档位状态 ---
 
 void test_readVehicleGear_extracts_dif_gear_bits()
 {
@@ -177,15 +177,14 @@ void test_isVehicleParked_false_for_drive()
 
 void test_isVehicleParked_true_for_sna()
 {
-    // SNA (7) reported by DI while car asleep / locked with Sentry: gate
-    // must still open so summon-unlock injection works on cold approach.
+    // DI 在车辆休眠/哨兵模式下报告 SNA (7)：门控
+    // 必须保持开启，以便在冷接近时召唤解锁注入正常工作。
     TEST_ASSERT_TRUE(isVehicleParked(7));
 }
 
 void test_isVehicleParked_true_for_invalid()
 {
-    // INVALID (0) reported by DI before it has fully come up: same
-    // rationale as SNA, treat as parked.
+    // DI 完全启动前报告无效 (0)：与 SNA 相同的理由，视为已驻车。
     TEST_ASSERT_TRUE(isVehicleParked(0));
 }
 
@@ -195,14 +194,14 @@ void test_isVehicleParked_false_for_reverse_neutral()
     TEST_ASSERT_FALSE(isVehicleParked(3));
 }
 
-// --- setSpeedProfileV12V13 ---
+// --- 设置速度配置文件 V12/V13 ---
 
 void test_setSpeedProfileV12V13_sets_profile_0()
 {
     CanFrame f = {};
     f.data[6] = 0xFF;
     setSpeedProfileV12V13(f, 0);
-    TEST_ASSERT_EQUAL_HEX8(0xF9, f.data[6]); // bits 1-2 cleared
+    TEST_ASSERT_EQUAL_HEX8(0xF9, f.data[6]); // 位 1-2 已清除
 }
 
 void test_setSpeedProfileV12V13_sets_profile_1()
@@ -224,7 +223,7 @@ void test_setSpeedProfileV12V13_sets_profile_2()
 void test_setSpeedProfileV12V13_preserves_other_bits()
 {
     CanFrame f = {};
-    f.data[6] = 0xF9; // bits 1-2 clear, rest set
+    f.data[6] = 0xF9; // 位 1-2 清除，其余设置
     setSpeedProfileV12V13(f, 1);
     TEST_ASSERT_EQUAL_HEX8(0xFB, f.data[6]);
 }
@@ -243,7 +242,7 @@ void test_computeVehicleChecksum_sums_payload_and_frame_id()
     TEST_ASSERT_EQUAL_HEX8(0xD1, computeVehicleChecksum(f));
 }
 
-// --- Runtime BYPASS_TLSSC_REQUIREMENT ---
+// --- 运行时 BYPASS_TLSSC_REQUIREMENT ---
 
 void test_runtime_bypass_tlssc_overrides_when_bit_clear()
 {

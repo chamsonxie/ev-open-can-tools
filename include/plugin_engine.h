@@ -32,9 +32,9 @@ using String = std::string;
 #define PLUGIN_PERIODIC_INTERVAL_MAX_MS 5000
 #define PLUGIN_GTW_UDS_REQUEST_ID 0x684
 #define PLUGIN_GTW_UDS_RESPONSE_ID 0x685
-#define PLUGIN_GTW_UDS_KEEPALIVE_MS 2000 // TesterPresent cadence once session is active
+#define PLUGIN_GTW_UDS_KEEPALIVE_MS 2000 // 会话激活后的TesterPresent节奏
 #define PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS 400
-#define PLUGIN_GTW_UDS_RETRY_BACKOFF_MS 5000 // after NRC or timeout, wait before retrying sequence
+#define PLUGIN_GTW_UDS_RETRY_BACKOFF_MS 5000 // 在NRC或超时后，等待一段时间再重试序列
 #define PLUGIN_GTW_UDS_SEED_MAX 6
 
 enum PluginOpType : uint8_t
@@ -60,13 +60,13 @@ struct PluginOp
 
 enum PluginGtwUdsState : uint8_t
 {
-    GTW_UDS_IDLE = 0,           // no silencing attempt in progress
-    GTW_UDS_SESSION_REQ = 1,    // 0x10 0x03 sent, waiting for positive response
-    GTW_UDS_SEED_REQ = 2,       // 0x27 0x01 sent, waiting for seed
-    GTW_UDS_KEY_SENT = 3,       // 0x27 0x02 sent, waiting for positive response
-    GTW_UDS_COMM_CTRL_SENT = 4, // 0x28 0x01 0x01 sent, waiting for positive response
-    GTW_UDS_ACTIVE = 5,         // silence is active; periodic 0x3E TesterPresent keeps it alive
-    GTW_UDS_FAILED = 6,         // NRC/timeout — back off before retry
+    GTW_UDS_IDLE = 0,           // 无静默尝试进行中
+    GTW_UDS_SESSION_REQ = 1,    // 已发送0x10 0x03，等待肯定响应
+    GTW_UDS_SEED_REQ = 2,       // 已发送0x27 0x01，等待种子
+    GTW_UDS_KEY_SENT = 3,       // 已发送0x27 0x02，等待肯定响应
+    GTW_UDS_COMM_CTRL_SENT = 4, // 已发送0x28 0x01 0x01，等待肯定响应
+    GTW_UDS_ACTIVE = 5,         // 静默已激活；周期性0x3E TesterPresent保持其存活
+    GTW_UDS_FAILED = 6,         // NRC/超时 — 在重试前退避
 };
 
 struct PluginGtwUdsMachine
@@ -204,244 +204,21 @@ static bool pluginGtwSilentSupported()
 #endif
 }
 
-// ── GTW UDS SILENCING KEY HOOK ──────────────────────────────────
+// ── GTW UDS 静默密钥钩子 ──────────────────────────────────────────
 //
-// SecurityAccess key computation. Tesla uses a proprietary seed-to-key
-// algorithm. Without the real algorithm the gateway answers with NRC
-// invalidKey and silencing will not take effect.
+// SecurityAccess密钥计算。Tesla使用专有的种子到密钥算法。
+// 没有真正的算法，网关将响应NRC invalidKey，静默将不会生效。
 //
-// Define PLUGIN_GTW_UDS_KEY_READY as the byte used by the current
-// seed-to-key algorithm. Without it, gtw_silent is ignored at parse time.
+// 将PLUGIN_GTW_UDS_KEY_READY定义为当前种子到密钥算法使用的字节。
+// 没有它，gtw_silent在解析时被忽略。
 
-#if defined(PLUGIN_GTW_UDS_KEY_READY)
-static_assert(PLUGIN_GTW_UDS_KEY_READY >= 0 && PLUGIN_GTW_UDS_KEY_READY <= 0xFF,
-              "PLUGIN_GTW_UDS_KEY_READY must be a byte value like 0x12");
+// ── GTW UDS 状态机（已禁用 — 只读模式） ─────────────────────────
 
-static bool pluginGtwUdsComputeKey(const uint8_t *seed, uint8_t seedLen,
-                                   uint8_t *outKey, uint8_t &outLen)
+static void pluginGtwUdsTick(PluginGtwUdsMachine &, CanDriver &, unsigned long)
 {
-    if (seedLen == 0 || seedLen > PLUGIN_GTW_UDS_SEED_MAX)
-        return false;
-    const uint8_t xorKey = static_cast<uint8_t>(PLUGIN_GTW_UDS_KEY_READY);
-    for (uint8_t i = 0; i < seedLen; i++)
-        outKey[i] = seed[i] ^ xorKey;
-    outLen = seedLen;
-    return true;
-}
-#else
-static bool pluginGtwUdsComputeKey(const uint8_t *seed, uint8_t seedLen,
-                                   uint8_t *outKey, uint8_t &outLen)
-{
-    (void)seed;
-    (void)seedLen;
-    (void)outKey;
-    outLen = 0;
-    return false;
-}
-#endif
-
-// ── GTW UDS STATE MACHINE ───────────────────────────────────────
-
-static CanFrame pluginMakeUdsRequest(const uint8_t *payload, uint8_t len, uint8_t bus)
-{
-    CanFrame frame;
-    frame.id = PLUGIN_GTW_UDS_REQUEST_ID;
-    frame.dlc = 8;
-    frame.bus = bus;
-    // ISO-TP single frame PCI: high nibble = 0, low nibble = length
-    frame.data[0] = len & 0x0F;
-    for (uint8_t i = 0; i < len && i < 7; i++)
-        frame.data[1 + i] = payload[i];
-    for (uint8_t i = 1 + len; i < 8; i++)
-        frame.data[i] = 0x00;
-    return frame;
 }
 
-static void pluginGtwUdsEnter(PluginGtwUdsMachine &m, PluginGtwUdsState next, unsigned long now,
-                              unsigned long actionDelayMs)
-{
-    m.state = next;
-    m.stateEnteredAt = now;
-    m.nextActionAt = now + actionDelayMs;
-}
-
-static void pluginGtwUdsFail(PluginGtwUdsMachine &m, uint8_t nrc, unsigned long now)
-{
-    m.lastNrc = nrc;
-    m.state = GTW_UDS_FAILED;
-    m.stateEnteredAt = now;
-    m.nextActionAt = now + m.retryAfterMs;
-}
-
-// Returns true if the frame was a GTW UDS response that advanced the machine.
-static bool pluginGtwUdsHandleResponse(PluginGtwUdsMachine &m, const CanFrame &frame, unsigned long now)
-{
-    if (frame.id != PLUGIN_GTW_UDS_RESPONSE_ID || frame.dlc < 2)
-        return false;
-
-    // Only single-frame ISO-TP responses are expected (all targeted services fit in 8 bytes).
-    uint8_t pciType = frame.data[0] >> 4;
-    if (pciType != 0x0)
-        return false;
-
-    uint8_t len = frame.data[0] & 0x0F;
-    if (len < 1 || len > 7)
-        return false;
-
-    uint8_t sid = frame.data[1];
-
-    // Negative response: 0x7F <requestedSid> <NRC>
-    if (sid == 0x7F && len >= 3)
-    {
-        uint8_t nrc = frame.data[3];
-        // 0x78 = responsePending — keep waiting, don't fail yet.
-        // Reset both the send-sentinel and the timeout window so we neither
-        // resend nor abort prematurely.
-        if (nrc == 0x78)
-        {
-            m.stateEnteredAt = now;
-            m.nextActionAt = now + PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS;
-            return true;
-        }
-        pluginGtwUdsFail(m, nrc, now);
-        return true;
-    }
-
-    switch (m.state)
-    {
-    case GTW_UDS_SESSION_REQ:
-        if (sid == 0x50 && len >= 2 && frame.data[2] == 0x03)
-        {
-            pluginGtwUdsEnter(m, GTW_UDS_SEED_REQ, now, 0);
-            return true;
-        }
-        break;
-
-    case GTW_UDS_SEED_REQ:
-        if (sid == 0x67 && len >= 3 && frame.data[2] == 0x01)
-        {
-            uint8_t seedLen = len - 2;
-            if (seedLen > PLUGIN_GTW_UDS_SEED_MAX)
-                seedLen = PLUGIN_GTW_UDS_SEED_MAX;
-            for (uint8_t i = 0; i < seedLen; i++)
-                m.seed[i] = frame.data[3 + i];
-            m.seedLen = seedLen;
-            pluginGtwUdsEnter(m, GTW_UDS_KEY_SENT, now, 0);
-            return true;
-        }
-        break;
-
-    case GTW_UDS_KEY_SENT:
-        if (sid == 0x67 && len >= 2 && frame.data[2] == 0x02)
-        {
-            pluginGtwUdsEnter(m, GTW_UDS_COMM_CTRL_SENT, now, 0);
-            return true;
-        }
-        break;
-
-    case GTW_UDS_COMM_CTRL_SENT:
-        if (sid == 0x68 && len >= 2 && frame.data[2] == 0x01)
-        {
-            pluginGtwUdsEnter(m, GTW_UDS_ACTIVE, now, PLUGIN_GTW_UDS_KEEPALIVE_MS);
-            return true;
-        }
-        break;
-
-    default:
-        break;
-    }
-
-    return false;
-}
-
-// Drives the UDS state machine forward: sends the next request if ready, or
-// handles timeouts. Caller must check pluginPeriodicEmit.gtwSilent first.
-static void pluginGtwUdsTick(PluginGtwUdsMachine &m, CanDriver &driver, unsigned long now)
-{
-    if ((long)(now - m.nextActionAt) < 0)
-        return;
-
-    switch (m.state)
-    {
-    case GTW_UDS_IDLE:
-    {
-        const uint8_t payload[] = {0x10, 0x03}; // DiagnosticSessionControl → ExtendedSession
-        driver.send(pluginMakeUdsRequest(payload, sizeof(payload), m.bus));
-        pluginGtwUdsEnter(m, GTW_UDS_SESSION_REQ, now, PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS);
-        break;
-    }
-    case GTW_UDS_SESSION_REQ:
-        if ((long)(now - m.stateEnteredAt) >= PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS)
-            pluginGtwUdsFail(m, 0xFF, now); // 0xFF = internal timeout marker
-        break;
-
-    case GTW_UDS_SEED_REQ:
-        if (m.stateEnteredAt == m.nextActionAt)
-        {
-            const uint8_t payload[] = {0x27, 0x01}; // SecurityAccess requestSeed
-            driver.send(pluginMakeUdsRequest(payload, sizeof(payload), m.bus));
-            m.nextActionAt = now + PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS;
-        }
-        else if ((long)(now - m.stateEnteredAt) >= PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS)
-            pluginGtwUdsFail(m, 0xFF, now);
-        break;
-
-    case GTW_UDS_KEY_SENT:
-        if (m.stateEnteredAt == m.nextActionAt)
-        {
-            uint8_t key[PLUGIN_GTW_UDS_SEED_MAX];
-            uint8_t keyLen = 0;
-            if (!pluginGtwUdsComputeKey(m.seed, m.seedLen, key, keyLen))
-            {
-                pluginGtwUdsFail(m, 0xFE, now); // 0xFE = local key failure
-                break;
-            }
-            m.lastSeedLen = m.seedLen;
-            for (uint8_t i = 0; i < m.seedLen; i++)
-                m.lastSeed[i] = m.seed[i];
-            m.lastKeyLen = keyLen;
-            for (uint8_t i = 0; i < keyLen; i++)
-                m.lastKey[i] = key[i];
-            uint8_t payload[2 + PLUGIN_GTW_UDS_SEED_MAX];
-            payload[0] = 0x27;
-            payload[1] = 0x02;
-            for (uint8_t i = 0; i < keyLen; i++)
-                payload[2 + i] = key[i];
-            driver.send(pluginMakeUdsRequest(payload, 2 + keyLen, m.bus));
-            m.nextActionAt = now + PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS;
-        }
-        else if ((long)(now - m.stateEnteredAt) >= PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS)
-            pluginGtwUdsFail(m, 0xFF, now);
-        break;
-
-    case GTW_UDS_COMM_CTRL_SENT:
-        if (m.stateEnteredAt == m.nextActionAt)
-        {
-            // 0x28 CommunicationControl: enableRxAndDisableTx (0x01), normalCommunication (0x01)
-            const uint8_t payload[] = {0x28, 0x01, 0x01};
-            driver.send(pluginMakeUdsRequest(payload, sizeof(payload), m.bus));
-            m.nextActionAt = now + PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS;
-        }
-        else if ((long)(now - m.stateEnteredAt) >= PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS)
-            pluginGtwUdsFail(m, 0xFF, now);
-        break;
-
-    case GTW_UDS_ACTIVE:
-    {
-        const uint8_t payload[] = {0x3E, 0x00}; // TesterPresent
-        driver.send(pluginMakeUdsRequest(payload, sizeof(payload), m.bus));
-        m.nextActionAt = now + PLUGIN_GTW_UDS_KEEPALIVE_MS;
-        break;
-    }
-
-    case GTW_UDS_FAILED:
-        // Back-off elapsed → retry the full sequence.
-        pluginGtwUdsEnter(m, GTW_UDS_IDLE, now, 0);
-        break;
-    }
-}
-
-// ── JSON PARSING ────────────────────────────────────────────────
+// ── JSON 解析 ────────────────────────────────────────────────────
 
 static uint8_t pluginDefaultMuxMask(int16_t mux)
 {
@@ -699,8 +476,8 @@ static bool pluginParseJson(const String &json, PluginData &out)
                         requestedSilent = op["silent"] | false;
                     o.gtwSilent = requestedSilent && pluginGtwSilentSupported();
 
-                    // When gtw_silent is requested, ensure the hardware CAN filter
-                    // accepts UDS traffic so the state machine can see responses.
+                    // 当请求gtw_silent时，确保硬件CAN过滤器
+                    // 接受UDS流量，以便状态机可以看到响应。
                     if (o.gtwSilent)
                     {
                         const uint32_t udsIds[] = {PLUGIN_GTW_UDS_REQUEST_ID,
@@ -729,7 +506,7 @@ static bool pluginParseJson(const String &json, PluginData &out)
             }
         }
 
-        // Deduplicate filter IDs
+        // 去重过滤器ID
         bool found = false;
         for (uint8_t i = 0; i < out.filterIdCount; i++)
         {
@@ -748,7 +525,7 @@ static bool pluginParseJson(const String &json, PluginData &out)
     return out.ruleCount > 0;
 }
 
-// ── SPIFFS STORAGE ──────────────────────────────────────────────
+// ── SPIFFS 存储 ──────────────────────────────────────────────────
 
 #if !defined(NATIVE_BUILD)
 static String pluginFilePath(const char *filename)
@@ -783,7 +560,7 @@ static void pluginLoadAll()
     while (f && pluginCount < PLUGIN_MAX)
     {
         String name = f.name();
-        // Normalize: some SPIFFS versions include leading /
+        // 标准化：某些SPIFFS版本包含前导/
         if (name.startsWith("/"))
             name = name.substring(1);
 
@@ -793,7 +570,7 @@ static void pluginLoadAll()
             PluginData &p = pluginStore[pluginCount];
             if (pluginParseJson(json, p))
             {
-                // Store just the user-facing filename (without /p_ prefix)
+                // 仅存储面向用户的文件名（不含/p_前缀）
                 String userFilename = name.substring(2); // remove "p_"
                 strlcpy(p.filename, userFilename.c_str(), sizeof(p.filename));
                 p.priority = pluginCount;
@@ -913,7 +690,7 @@ static int pluginFindByName(const char *name)
     return -1;
 }
 
-// ── RULE EXECUTION ──────────────────────────────────────────────
+// ── 规则执行 ────────────────────────────────────────────────────
 
 static uint8_t pluginCounterShift(uint8_t mask)
 {
@@ -1121,26 +898,6 @@ static void pluginNoteRuleChanged(PluginRule &rule, const CanFrame &original, co
     pluginCopyDiagFrame(rule.diag.lastModified, modified);
 }
 
-static void pluginNoteRuleSend(PluginRule &rule, bool ok, unsigned long now)
-{
-    rule.diag.lastSendMs = now;
-    if (ok)
-    {
-        rule.diag.sendOkCount++;
-        return;
-    }
-
-    uint32_t before = rule.diag.sendFailCount;
-    rule.diag.sendFailCount++;
-    if (before == 0)
-    {
-        char msg[68];
-        snprintf(msg, sizeof(msg), "[PLG] Rule send failed CAN 0x%03lX mux %d",
-                 static_cast<unsigned long>(rule.canId), static_cast<int>(rule.mux));
-        pluginLogDiagnosticsEvent(msg);
-    }
-}
-
 static bool pluginHasEnabledPeriodicEmit()
 {
     for (uint8_t p = 0; p < pluginCount; p++)
@@ -1178,8 +935,8 @@ static void pluginCachePeriodicEmit(const CanFrame &frame, uint16_t intervalMs, 
     pluginPeriodicEmit.intervalMs = pluginClampPeriodicInterval(intervalMs);
     pluginPeriodicEmit.nextFrameAt = now + pluginPeriodicEmit.intervalMs;
 
-    // Preserve UDS state across repeated caching so we don't restart the
-    // handshake every time the periodic frame is refreshed.
+    // 在重复缓存之间保留UDS状态，这样我们不会在每次
+    // 周期性帧刷新时重新启动握手。
     if (wasActive && wasGtwSilent && gtwSilent)
     {
         pluginPeriodicEmit.uds = preservedUds;
@@ -1217,31 +974,17 @@ static void pluginEmitPeriodicTick(CanDriver &driver, unsigned long now)
     if ((long)(now - pluginPeriodicEmit.nextFrameAt) < 0)
         return;
 
-    driver.send(pluginPeriodicEmit.frame);
     pluginAdvanceCounters(pluginPeriodicEmit.frame, pluginPeriodicEmit.counterOps,
                           pluginPeriodicEmit.counterOpCount, pluginPeriodicEmit.checksum);
     pluginPeriodicEmit.nextFrameAt = now + pluginPeriodicEmit.intervalMs;
 }
 
-static bool pluginProcessFrame(const CanFrame &original, CanDriver &driver)
+static bool pluginProcessFrame(const CanFrame &original, CanDriver &)
 {
     if (pluginsLocked || pluginCount == 0)
         return false;
 
-    // Intercept GTW UDS responses so the silencing state machine can
-    // progress. These frames are not subject to rule-based rewriting.
-    if (original.id == PLUGIN_GTW_UDS_RESPONSE_ID && pluginPeriodicEmit.active &&
-        pluginPeriodicEmit.gtwSilent)
-    {
-        if (pluginPeriodicEmit.uds.bus != CAN_BUS_ANY && original.bus != CAN_BUS_ANY &&
-            (pluginPeriodicEmit.uds.bus & original.bus) == 0)
-            return false;
-        pluginGtwUdsHandleResponse(pluginPeriodicEmit.uds, original, millis());
-        return true;
-    }
-
     bool processed = false;
-    bool sendRequested = false;
     bool checksumPending = false;
     bool emitPeriodicRequested = false;
     bool emitPeriodicGtwSilent = false;
@@ -1271,10 +1014,7 @@ static bool pluginProcessFrame(const CanFrame &original, CanDriver &driver)
 
             processed = true;
             pluginNoteRuleMatched(rule, now);
-            if (!rule.sendAfter)
-                continue;
 
-            sendRequested = true;
             bool ruleTouched = false;
             for (uint8_t o = 0; o < rule.opCount; o++)
             {
@@ -1323,42 +1063,23 @@ static bool pluginProcessFrame(const CanFrame &original, CanDriver &driver)
         claimed |= pluginTouched;
     }
 
-    if (sendRequested)
+    if (checksumPending)
+        modified.data[7] = computeVehicleChecksum(modified);
+    bool cachePeriodic = emitPeriodicRequested && original.id == 2047 && (original.data[0] & 0x07) == 3;
+    if (pluginFrameChanged(original, modified))
     {
-        if (checksumPending)
-            modified.data[7] = computeVehicleChecksum(modified);
-        if (pluginBeforeSend && pluginBeforeSend(modified, original) && checksumPending)
-            modified.data[7] = computeVehicleChecksum(modified);
-        bool cachePeriodic = emitPeriodicRequested && original.id == 2047 && (original.data[0] & 0x07) == 3;
-        CanFrame periodicFrame = modified;
-        if (pluginFrameChanged(original, modified))
-        {
-            for (uint8_t i = 0; i < changedRuleCount; i++)
-                pluginNoteRuleChanged(*changedRules[i], original, modified);
-            uint8_t replayCount = original.id == 2047 ? pluginGetReplayCount() : 1;
-            CanFrame replayFrame = modified;
-            for (uint8_t i = 0; i < replayCount; i++)
-            {
-                bool sendOk = driver.send(replayFrame);
-                unsigned long sendNow = millis();
-                for (uint8_t ruleIndex = 0; ruleIndex < changedRuleCount; ruleIndex++)
-                    pluginNoteRuleSend(*changedRules[ruleIndex], sendOk, sendNow);
-                if (i + 1 >= replayCount)
-                    continue;
-                pluginAdvanceCounters(replayFrame, counterOps, counterOpCount, checksumPending);
-            }
-            periodicFrame = replayFrame;
-            pluginAdvanceCounters(periodicFrame, counterOps, counterOpCount, checksumPending);
-        }
-        if (cachePeriodic)
-            pluginCachePeriodicEmit(periodicFrame, emitPeriodicIntervalMs, emitPeriodicGtwSilent,
-                                    counterOps, counterOpCount, checksumPending, millis());
+        for (uint8_t i = 0; i < changedRuleCount; i++)
+            pluginNoteRuleChanged(*changedRules[i], original, modified);
+        pluginAdvanceCounters(modified, counterOps, counterOpCount, checksumPending);
     }
+    if (cachePeriodic)
+        pluginCachePeriodicEmit(modified, emitPeriodicIntervalMs, emitPeriodicGtwSilent,
+                                counterOps, counterOpCount, checksumPending, millis());
 
     return processed;
 }
 
-// ── FILTER MERGING ──────────────────────────────────────────────
+// ── 过滤器合并 ──────────────────────────────────────────────────
 
 static uint8_t pluginGetFilterIds(uint32_t *ids, uint8_t maxIds)
 {

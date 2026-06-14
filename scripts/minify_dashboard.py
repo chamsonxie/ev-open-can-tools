@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Minify + gzip embedded dashboard HTML in mcp2515_dashboard_ui.h.
+"""压缩并gzip嵌入在mcp2515_dashboard_ui.h中的仪表板HTML。
 
-Reads source HTML from mcp2515_dashboard_ui.src.h, minifies HTML/CSS/JS,
-gzips the result, and writes mcp2515_dashboard_ui.h with both:
-  - DASH_HTML[]   (raw minified HTML, for native builds and debugging)
-  - DASH_HTML_GZ[] / DASH_HTML_GZ_LEN  (gzip-compressed for HTTP send)
+从mcp2515_dashboard_ui.src.h读取源HTML，压缩HTML/CSS/JS，
+对结果进行gzip压缩，并将以下两者写入mcp2515_dashboard_ui.h：
+  - DASH_HTML[]   (原始压缩后的HTML，用于本地构建和调试)
+  - DASH_HTML_GZ[] / DASH_HTML_GZ_LEN  (gzip压缩后的数据，用于HTTP发送)
 """
 import gzip
 import re

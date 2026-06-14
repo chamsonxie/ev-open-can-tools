@@ -24,11 +24,10 @@ struct CarManagerBase
     Shared<bool> speedProfileAuto{true};
     Shared<bool> ADEnabled{false};
     Shared<bool> APActive{false};
-    // Default Parked=true so the AP Injection Gate opens immediately on
-    // module boot when the DI is asleep (e.g. car locked with Sentry on,
-    // CAN ID 280 not broadcast). The first DI_systemStatus frame with a
-    // driving gear (R/N/D) flips this to false; if 280 never arrives,
-    // the car is asleep / parked and the gate stays open by design.
+    // 默认 Parked=true，以便当DI休眠时（例如车辆锁闭且哨兵模式开启，
+    // CAN ID 280未广播），AP注入门在模块启动时立即打开。
+    // 第一个带有行驶档位（R/N/D）的DI_systemStatus帧将其翻转为false；
+    // 如果280从未到达，则车辆处于休眠/驻车状态，门按设计保持打开。
     Shared<bool> Parked{true};
     Shared<bool> Summoning{false};
     Shared<int> gatewayAutopilot{-1};
@@ -44,13 +43,11 @@ struct CarManagerBase
     Shared<int> dasAutopilotStatus{-1};
 
     unsigned long lastSummonActivityMs = 0;
-    // Summon-vs-AP/TACC discrimination state. ACA (DI_autonomyControlActive)
-    // alone is set during AP, TACC, and Smart Summon, so it cannot be the
-    // sole gate signal. We only treat ACA as "summon active" when we have
-    // also observed UI_selfParkRequest go non-zero during the current
-    // autonomy episode. ACA falling edge clears sprSeen so the next ACA
-    // rising edge (e.g. user engaging TACC after a completed summon) does
-    // not falsely keep the gate open.
+    // 召唤与AP/TACC鉴别状态。仅ACA（DI_autonomyControlActive）
+    // 在AP、TACC和智能召唤期间设置，因此它不能作为唯一的门控信号。
+    // 只有当我们也在当前自主驾驶会话期间观察到UI_selfParkRequest变为非零时，
+    // 我们才将ACA视为"召唤激活"。ACA下降沿清除sprSeen，
+    // 这样下一个ACA上升沿（例如用户在完成召唤后启用TACC）不会错误地保持门打开。
     bool sprSeen = false;
     bool lastAca = false;
 
@@ -95,20 +92,20 @@ struct CarManagerBase
             last1021Ms = now;
     }
 
-    // Recompute Summoning from current sprSeen + lastAca state. Summoning
-    // requires both: ACA bit currently set AND we have seen at least one
-    // UI_selfParkRequest non-zero command in the current autonomy episode.
-    // This excludes plain TACC (ACA=1, no spr) and post-AP ACA tail
-    // (ACA blip with no fresh spr) from latching the gate.
+    // 根据当前sprSeen + lastAca状态重新计算Summoning。召唤
+    // 需要同时满足：ACA位当前已设置且我们在当前自主驾驶会话中至少看到
+    // 一个非零的UI_selfParkRequest命令。
+    // 这排除了纯TACC（ACA=1，无spr）和AP后的ACA尾部
+    // （ACA闪烁但无新的spr）锁住门。
     void recomputeSummoning()
     {
         Summoning = lastAca && sprSeen;
     }
 
-    // Update summon state from UI_driverAssistControl (CAN ID 1016).
-    // Tesla DBC: UI_selfParkRequest at byte 3 bits 4-7 (4=PRIME, 5=PAUSE,
-    // 7/8=AUTO_SUMMON_FWD/REV, 11=SMART_SUMMON, 0=NONE). Records that a
-    // summon command has been issued during the current autonomy episode.
+    // 从UI_driverAssistControl（CAN ID 1016）更新召唤状态。
+    // Tesla DBC：UI_selfParkRequest位于字节3的第4-7位（4=预备, 5=暂停,
+    // 7/8=自动召唤前进/后退, 11=智能召唤, 0=无）。记录在当前自主驾驶会话期间
+    // 已发出召唤命令。
     void updateSummonFrom1016(const CanFrame &frame)
     {
         if (frame.dlc < 4)
@@ -119,11 +116,11 @@ struct CarManagerBase
         recomputeSummoning();
     }
 
-    // Update summon state from DI_systemStatus (CAN ID 280).
-    // Tesla DBC: DI_autonomyControlActive at bit 50 (byte 6 bit 2). Held
-    // high while the DI is being driven by AP, TACC, Smart Summon, etc.
-    // ACA falling edge ends the autonomy episode and clears sprSeen so a
-    // subsequent TACC engagement (ACA=1 again) does not re-latch the gate.
+    // 从DI_systemStatus（CAN ID 280）更新召唤状态。
+    // Tesla DBC：DI_autonomyControlActive位于第50位（字节6第2位）。
+    // 当DI由AP、TACC、智能召唤等驱动时保持高电平。
+    // ACA下降沿结束自主驾驶会话并清除sprSeen，
+    // 以便后续的TACC接合（再次ACA=1）不会重新锁住门。
     void updateSummonFromDISystemStatus(const CanFrame &frame)
     {
         if (frame.dlc < 7)
@@ -135,11 +132,11 @@ struct CarManagerBase
         recomputeSummoning();
     }
 
-    // Force Summoning off and reset sprSeen when the vehicle is observed
-    // in Park with no active autonomy episode, so a manual P->D shift
-    // afterwards correctly waits for AP. During Smart Summon startup the
-    // DI can report ACA=1 while gear is still P; keep sprSeen latched so
-    // it survives the pending shift out of Park.
+    // 当观察到车辆处于驻车状态且无活跃的自主驾驶会话时，
+    // 强制关闭Summoning并重置sprSeen，以便后续手动P->D切换
+    // 正确等待AP。在智能召唤启动期间，
+    // DI可以在档位仍为P时报告ACA=1；保持sprSeen锁定，
+    // 使其在待处理的驶出驻车切换期间仍然有效。
     void clearSummonOnPark()
     {
         Summoning = false;
@@ -184,8 +181,8 @@ struct LegacyHandler : public CarManagerBase
         if (onFrame)
             onFrame(frame);
         updateGateFrameDiagnostics(frame);
-        // STW_ACTN_RQ (0x045 = 69): Follow-Distance-Stalk as Source for Profile Mapping
-        // byte[1]: 0x00=Pos1, 0x21=Pos2, 0x42=Pos3, 0x64=Pos4, 0x85=Pos5, 0xA6=Pos6, 0xC8=Pos7
+        // STW_ACTN_RQ（0x045 = 69）：跟车距离拨杆作为配置文件映射源
+        // byte[1]：0x00=位置1, 0x21=位置2, 0x42=位置3, 0x64=位置4, 0x85=位置5, 0xA6=位置6, 0xC8=位置7
         if (frame.id == 69)
         {
             if (frame.dlc < 2)
@@ -208,10 +205,9 @@ struct LegacyHandler : public CarManagerBase
             {
                 uint8_t diGear = readDIGear(frame);
                 Parked = isVehicleParked(diGear);
-                // Only clear Summoning on a *definitive* Park (gear==1).
-                // SNA (7) and INVALID (0) can blip during gear transitions
-                // (e.g. during a Summon shift to Reverse) and would
-                // otherwise drop the gate mid-summon.
+                // 仅在*明确的*驻车（gear==1）时清除Summoning。
+                // SNA（7）和无效（0）可能在档位切换期间短暂出现
+                // （例如在召唤切换到倒车档时），否则会在召唤中途关闭门。
                 updateSummonFromDISystemStatus(frame);
                 clearSummonOnParkIfAcaInactive(diGear);
             }
@@ -224,8 +220,8 @@ struct LegacyHandler : public CarManagerBase
             {
                 uint8_t difGear = readVehicleGear(frame);
                 Parked = isVehicleParked(difGear);
-                // Only clear Summoning on a *definitive* Park (gear==1).
-                // SNA (7) and INVALID (0) can blip during gear transitions.
+                // 仅在*明确的*驻车（gear==1）时清除Summoning。
+                // SNA（7）和无效（0）可能在档位切换期间短暂出现。
                 clearSummonOnParkIfAcaInactive(difGear);
             }
             return;
@@ -304,10 +300,9 @@ struct HW3Handler : public CarManagerBase
             {
                 uint8_t diGear = readDIGear(frame);
                 Parked = isVehicleParked(diGear);
-                // Only clear Summoning on a *definitive* Park (gear==1).
-                // SNA (7) and INVALID (0) can blip during gear transitions
-                // (e.g. during a Summon shift to Reverse) and would
-                // otherwise drop the gate mid-summon.
+                // 仅在*明确的*驻车（gear==1）时清除Summoning。
+                // SNA（7）和无效（0）可能在档位切换期间短暂出现
+                // （例如在召唤切换到倒车档时），否则会在召唤中途关闭门。
                 updateSummonFromDISystemStatus(frame);
                 clearSummonOnParkIfAcaInactive(diGear);
             }
@@ -320,8 +315,8 @@ struct HW3Handler : public CarManagerBase
             {
                 uint8_t difGear = readVehicleGear(frame);
                 Parked = isVehicleParked(difGear);
-                // Only clear Summoning on a *definitive* Park (gear==1).
-                // SNA (7) and INVALID (0) can blip during gear transitions.
+                // 仅在*明确的*驻车（gear==1）时清除Summoning。
+                // SNA（7）和无效（0）可能在档位切换期间短暂出现。
                 clearSummonOnParkIfAcaInactive(difGear);
             }
             return;
@@ -426,7 +421,7 @@ struct HW3Handler : public CarManagerBase
                     modified = true;
                 }
 #else
-                // No dashboard: nag suppression always-on (RP2040, M4)
+                // 无仪表盘：鸣叫抑制始终开启（RP2040, M4）
                 setBit(frame, 19, false);
                 modified = true;
 #endif
@@ -460,22 +455,22 @@ struct HW3Handler : public CarManagerBase
 };
 
 /**
- * NagHandler — Autosteer nag suppression (counter+1 echo method)
+ * NagHandler — 自动辅助转向鸣叫抑制（计数器+1回显方法）
  *
- * Replicates the Chinese TSL6P module behavior:
- * - Listens for CAN 880 (0x370) = EPAS3P_sysStatus
- * - When handsOnLevel = 0 (nag would trigger):
- *   1. Copies the real frame
- *   2. Sets byte 3 = 0xB6 (fixed torsionBarTorque = 1.80 Nm)
- *   3. Sets byte 4 |= 0x40 (handsOnLevel = 1)
- *   4. Increments counter (byte 6 lower nibble + 1)
- *   5. Recalculates checksum (byte 7)
- * - The real EPAS frame with the same counter arrives AFTER -> rejected as duplicate
+ * 复现中国TSL6P模块的行为：
+ * - 监听CAN 880（0x370）= EPAS3P_sysStatus
+ * - 当handsOnLevel = 0（将会触发鸣叫）时：
+ *   1. 复制真实帧
+ *   2. 设置字节3 = 0xB6（固定torsionBarTorque = 1.80 Nm）
+ *   3. 设置字节4 |= 0x40（handsOnLevel = 1）
+ *   4. 递增计数器（字节6低半字节 + 1）
+ *   5. 重新计算校验和（字节7）
+ * - 具有相同计数器的真实EPAS帧稍后到达 -> 作为重复帧被拒绝
  *
- * Tested: Model Y Performance 2022 HW3, Basic Autopilot
- * Bus: X179 pin 2/3 (CAN bus 4)
+ * 测试通过：Model Y Performance 2022 HW3，基础版自动辅助转向
+ * 总线：X179 pin 2/3（CAN总线4）
  *
- * Enable with build flag: -D NAG_KILLER
+ * 使用构建标志启用：-D NAG_KILLER
  */
 struct NagHandler : public CarManagerBase
 {
@@ -508,18 +503,18 @@ struct NagHandler : public CarManagerBase
         echo.data[2] = (frame.data[2] & 0xF0) | 0x08;
         echo.data[5] = frame.data[5];
 
-        // Fixed torque = 1.80 Nm (tRaw = 0x08B6)
+        // 固定扭矩 = 1.80 Nm（tRaw = 0x08B6）
         echo.data[3] = 0xB6;
 
-        // handsOnLevel = 1
+        // handsOnLevel 设置为 1
         echo.data[4] = frame.data[4] | 0x40;
 
-        // Counter + 1
+        // 计数器 + 1
         uint8_t cnt = (frame.data[6] & 0x0F);
         cnt = (cnt + 1) & 0x0F;
         echo.data[6] = (frame.data[6] & 0xF0) | cnt;
 
-        // Checksum: sum(byte0..byte6) + 0x73
+        // 校验和：sum(byte0..byte6) + 0x73
         uint16_t sum = echo.data[0] + echo.data[1] + echo.data[2] + echo.data[3] + echo.data[4] + echo.data[5] + echo.data[6];
         echo.data[7] = static_cast<uint8_t>((sum + 0x73) & 0xFF);
 
@@ -574,10 +569,9 @@ struct HW4Handler : public CarManagerBase
             {
                 uint8_t diGear = readDIGear(frame);
                 Parked = isVehicleParked(diGear);
-                // Only clear Summoning on a *definitive* Park (gear==1).
-                // SNA (7) and INVALID (0) can blip during gear transitions
-                // (e.g. during a Summon shift to Reverse) and would
-                // otherwise drop the gate mid-summon.
+                // 仅在*明确的*驻车（gear==1）时清除Summoning。
+                // SNA（7）和无效（0）可能在档位切换期间短暂出现
+                // （例如在召唤切换到倒车档时），否则会在召唤中途关闭门。
                 updateSummonFromDISystemStatus(frame);
                 clearSummonOnParkIfAcaInactive(diGear);
             }
@@ -590,8 +584,8 @@ struct HW4Handler : public CarManagerBase
             {
                 uint8_t difGear = readVehicleGear(frame);
                 Parked = isVehicleParked(difGear);
-                // Only clear Summoning on a *definitive* Park (gear==1).
-                // SNA (7) and INVALID (0) can blip during gear transitions.
+                // 仅在*明确的*驻车（gear==1）时清除Summoning。
+                // SNA（7）和无效（0）可能在档位切换期间短暂出现。
                 clearSummonOnParkIfAcaInactive(difGear);
             }
             return;
@@ -703,10 +697,6 @@ struct HW4Handler : public CarManagerBase
             if (index == 2 && ADEnabled && !speedProfileAuto && (!checkAD || checkAD()))
             {
                 setSpeedProfileHW4(frame, speedProfile);
-                framesSent++;
-                driver.send(frame);
-                if (onSend)
-                    onSend(2, true);
             }
             if (index == 1)
             {
@@ -720,7 +710,7 @@ struct HW4Handler : public CarManagerBase
                     modified = true;
                 }
 #else
-                // No dashboard: nag suppression always-on (RP2040, M4)
+                // 无仪表盘：鸣叫抑制始终开启（RP2040, M4）
                 setBit(frame, 19, false);
                 setBit(frame, 47, true);
                 modified = true;

@@ -1,21 +1,6 @@
-idf_component_register(
-    SRCS
-        "main.cpp"
-        "espidf_runtime.cpp"
-    INCLUDE_DIRS
-        "../include"
-        ".."
-    REQUIRES
-        app_update
-        esp_http_client
-        esp_http_server
-        esp_https_ota
-        esp_netif
-        esp_wifi
-        nvs_flash
-        spi_flash
-        spiffs
-        driver
-)
+# This file was automatically generated for projects
+# without default 'CMakeLists.txt' file.
 
-target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_17)
+FILE(GLOB_RECURSE app_sources ${CMAKE_SOURCE_DIR}/src/*.*)
+
+idf_component_register(SRCS ${app_sources})

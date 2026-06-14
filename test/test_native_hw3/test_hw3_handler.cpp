@@ -18,12 +18,12 @@ void setUp()
 
 void tearDown() {}
 
-// --- Speed profile from follow distance (CAN ID 1016) ---
+// --- 基于跟车距离的速度配置文件 (CAN ID 1016) ---
 
 void test_hw3_follow_distance_1_sets_profile_2()
 {
     CanFrame f = {.id = 1016};
-    f.data[5] = 0b00100000; // followDistance = 1
+    f.data[5] = 0b00100000; // 跟车距离 = 1
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(2, handler.speedProfile);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
@@ -32,7 +32,7 @@ void test_hw3_follow_distance_1_sets_profile_2()
 void test_hw3_follow_distance_2_sets_profile_1()
 {
     CanFrame f = {.id = 1016};
-    f.data[5] = 0b01000000; // followDistance = 2
+    f.data[5] = 0b01000000; // 跟车距离 = 2
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(1, handler.speedProfile);
 }
@@ -40,7 +40,7 @@ void test_hw3_follow_distance_2_sets_profile_1()
 void test_hw3_follow_distance_3_sets_profile_0()
 {
     CanFrame f = {.id = 1016};
-    f.data[5] = 0b01100000; // followDistance = 3
+    f.data[5] = 0b01100000; // 跟车距离 = 3
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(0, handler.speedProfile);
 }
@@ -48,9 +48,9 @@ void test_hw3_follow_distance_3_sets_profile_0()
 void test_hw3_follow_distance_0_keeps_default()
 {
     CanFrame f = {.id = 1016};
-    f.data[5] = 0x00; // followDistance = 0
+    f.data[5] = 0x00; // 跟车距离 = 0
     handler.handleMessage(f, mock);
-    TEST_ASSERT_EQUAL_INT(1, handler.speedProfile); // default
+    TEST_ASSERT_EQUAL_INT(1, handler.speedProfile); // 默认值
 }
 
 void test_hw3_manual_profile_ignores_follow_distance()
@@ -59,7 +59,7 @@ void test_hw3_manual_profile_ignores_follow_distance()
     handler.speedProfile = 1;
 
     CanFrame f = {.id = 1016};
-    f.data[5] = 0b00100000; // followDistance = 1 would map to profile 2
+    f.data[5] = 0b00100000; // 跟车距离 = 1 将映射到配置文件 2
     handler.handleMessage(f, mock);
 
     TEST_ASSERT_EQUAL_INT(1, handler.speedProfile);
@@ -69,15 +69,15 @@ void test_hw3_manual_profile_ignores_follow_distance()
 void test_hw3_follow_distance_profile_survives_mux0_without_injection()
 {
     CanFrame followDistanceFrame = {.id = 1016};
-    followDistanceFrame.data[5] = 0b00100000; // followDistance = 1 => profile 2
+    followDistanceFrame.data[5] = 0b00100000; // 跟车距离 = 1 => 配置文件 2
     handler.handleMessage(followDistanceFrame, mock);
     TEST_ASSERT_EQUAL_INT(2, handler.speedProfile);
 
     mock.reset();
     CanFrame autopilotFrame = {.id = 1021};
-    autopilotFrame.data[0] = 0x00; // mux 0
-    autopilotFrame.data[4] = 0x20; // AD selected
-    autopilotFrame.data[3] = 60;   // speed offset = 0
+    autopilotFrame.data[0] = 0x00; // MUX 0
+    autopilotFrame.data[4] = 0x20; // AD 已选择
+    autopilotFrame.data[3] = 60;   // 速度偏移 = 0
     autopilotFrame.data[6] = 0x02;
     handler.handleMessage(autopilotFrame, mock);
 
@@ -87,20 +87,20 @@ void test_hw3_follow_distance_profile_survives_mux0_without_injection()
     TEST_ASSERT_EQUAL_HEX8(0x02, mock.sent[0].data[6] & 0x06);
 }
 
-// --- AD shadowing fix regression test ---
+// --- AD 影子修复回归测试 ---
 
 void test_hw3_AD_enabled_only_set_on_mux0()
 {
     CanFrame f0 = {.id = 1021};
-    f0.data[0] = 0x00; // mux 0
-    f0.data[4] = 0x20; // AD selected
+    f0.data[0] = 0x00; // MUX 0
+    f0.data[4] = 0x20; // AD 已选择
     handler.handleMessage(f0, mock);
     TEST_ASSERT_TRUE(handler.ADEnabled);
 
     mock.reset();
     CanFrame f2 = {.id = 1021};
-    f2.data[0] = 0x02; // mux 2
-    f2.data[4] = 0x00; // AD bit not set in this frame
+    f2.data[0] = 0x02; // MUX 2
+    f2.data[4] = 0x00; // 此帧中 AD 位未设置
     handler.handleMessage(f2, mock);
     TEST_ASSERT_TRUE(handler.ADEnabled);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
@@ -108,10 +108,10 @@ void test_hw3_AD_enabled_only_set_on_mux0()
 
 void test_hw3_AD_disabled_on_mux0_prevents_mux2_send()
 {
-    // mux 0 with AD disabled
+    // MUX 0，AD 禁用
     CanFrame f0 = {.id = 1021};
     f0.data[0] = 0x00;
-    f0.data[4] = 0x00; // AD NOT selected
+    f0.data[4] = 0x00; // AD 未选择
     handler.handleMessage(f0, mock);
     TEST_ASSERT_FALSE(handler.ADEnabled);
 
@@ -122,7 +122,7 @@ void test_hw3_AD_disabled_on_mux0_prevents_mux2_send()
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
-// --- AD activation (mux 0) ---
+// --- AD 激活 (MUX 0) ---
 
 void test_hw3_AD_mux0_sends_with_bit46()
 {
@@ -155,7 +155,7 @@ void test_hw3_recorded_ap_mux0_enables_ad()
 void test_hw3_das_status_available_does_not_mark_ap_active()
 {
     CanFrame f = {.id = 921};
-    f.data[0] = 0x02; // AVAILABLE
+    f.data[0] = 0x02; // 可用
 
     handler.handleMessage(f, mock);
 
@@ -166,7 +166,7 @@ void test_hw3_das_status_available_does_not_mark_ap_active()
 void test_hw3_das_status_active_marks_ap_active()
 {
     CanFrame f = {.id = 921};
-    f.data[0] = 0x03; // ACTIVE_1
+    f.data[0] = 0x03; // 激活_1
 
     handler.handleMessage(f, mock);
 
@@ -199,7 +199,7 @@ void test_hw3_gear_drive_clears_parked()
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
-// --- Nag suppression (mux 1) ---
+// --- 提示抑制 (MUX 1) ---
 
 void test_hw3_nag_suppression_clears_bit19_on_mux1()
 {
@@ -218,7 +218,7 @@ void test_hw3_nag_suppression_skips_mux1_changes_when_eap_runtime_disabled()
     f.data[0] = 0x01;
     setBit(f, 19, true);
     handler.handleMessage(f, mock);
-    TEST_ASSERT_EQUAL(0, mock.sent.size()); // frame are not sent when runtime disabled
+    TEST_ASSERT_EQUAL(0, mock.sent.size()); // 运行时禁用时不发送帧
 }
 void test_hw3_mux1_sets_track_labels_bit46()
 {
@@ -226,10 +226,10 @@ void test_hw3_mux1_sets_track_labels_bit46()
     f.data[0] = 0x01;
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL(1, mock.sent.size());
-    TEST_ASSERT_EQUAL_HEX8(0x40, mock.sent[0].data[5] & 0x40); // bit 46
+    TEST_ASSERT_EQUAL_HEX8(0x40, mock.sent[0].data[5] & 0x40); // 位 46
 }
 
-// --- No sends on unrelated CAN IDs ---
+// --- 无关 CAN ID 不发送 ---
 
 void test_hw3_ignores_unrelated_can_id()
 {
@@ -242,13 +242,13 @@ void test_hw3_gw_autopilot_mux2_updates_state_without_send()
 {
     CanFrame f = {.id = 2047};
     f.data[0] = 0x02;
-    f.data[5] = 0x08; // ENHANCED = 2
+    f.data[5] = 0x08; // 增强版 = 2
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(2, handler.gatewayAutopilot);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
-// --- Send counts ---
+// --- 发送计数 ---
 
 void test_hw3_AD_enabled_mux0_sends_exactly_1()
 {
@@ -267,7 +267,7 @@ void test_hw3_mux1_sends_exactly_1()
     TEST_ASSERT_EQUAL(1, mock.sent.size());
 }
 
-// --- Filter IDs ---
+// --- 过滤器 ID ---
 
 void test_hw3_filter_ids_count()
 {

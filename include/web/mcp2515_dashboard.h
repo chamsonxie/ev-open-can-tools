@@ -127,24 +127,24 @@ static constexpr uint8_t kDashLedBrightnessDefault = 32;
 #endif
 static uint8_t dashLedBrightness = kDashLedBrightnessDefault;
 
-// WiFi AP (hotspot) — overridable at runtime
+    // WiFi AP（热点）——运行时可覆盖
 static char apSSID[33] = "";
 static char apPass[65] = "";
-static bool apHidden = false; // when true, SSID is not broadcast (hidden AP)
+    static bool apHidden = false; // 为true时，SSID不广播（隐藏AP）
 static constexpr size_t kDashMaxSsidLen = 32;
 static constexpr size_t kDashMinApPassLen = 8;
 static constexpr size_t kDashMaxPassLen = 64;
 static constexpr int kDashApChannel = 1;
 static constexpr int kDashApMaxConn = 4;
 
-// WiFi STA (client) mode for internet access
+    // WiFi STA（客户端）模式用于互联网访问
 static char staSSID[33] = "";
 static char staPass[65] = "";
 static bool staConnected = false;
 static bool staConnectAttemptActive = false;
 static bool staStaticIP = false;
 
-// Multi-SSID storage
+    // 多SSID存储
 static constexpr uint8_t kDashMaxWifiNetworks = 4;
 struct DashWifiNetwork
 {
@@ -158,12 +158,12 @@ struct DashWifiNetwork
 };
 static DashWifiNetwork wifiNetworks[kDashMaxWifiNetworks] = {};
 static uint8_t wifiNetworkCount = 0;
-static int8_t wifiActiveSlot = -1;    // slot currently selected for STA attempt
-static int8_t wifiNextRotateSlot = 0; // next slot to try when rotating
+    static int8_t wifiActiveSlot = -1;    // 当前选择的STA连接槽位
+    static int8_t wifiNextRotateSlot = 0; // 轮转时下一个尝试的槽位
 static bool updateBetaChannel = false;
 static bool autoUpdateEnabled = false;
-static bool autoUpdateDone = false;            // one-shot per boot
-static unsigned long autoUpdateEligibleAt = 0; // millis() at which auto-check may fire
+    static bool autoUpdateDone = false;            // 每次启动仅执行一次
+    static unsigned long autoUpdateEligibleAt = 0; // millis() 自动检查可以触发的时间
 static unsigned long staConnectStartedAt = 0;
 static unsigned long staRetryAt = 0;
 static constexpr unsigned long kDashStaBootDelayMs = 5000;
@@ -174,7 +174,7 @@ static IPAddress staGW(0, 0, 0, 0);
 static IPAddress staMask(255, 255, 255, 0);
 static IPAddress staDNS(0, 0, 0, 0);
 
-// Multi-SSID NVS helpers (key form: w0s, w0p, w0t, w0i, w0g, w0m, w0d)
+    // 多SSID NVS辅助函数（键格式：w0s, w0p, w0t, w0i, w0g, w0m, w0d）
 static String dashWifiKey(uint8_t slot, const char *sub)
 {
     String k = "w";
@@ -202,7 +202,7 @@ static void dashClearLegacyOptionPrefs();
 static void dashSchedulePluginStateSave(unsigned long delayMs = 750);
 static void dashFlushPluginStatesIfDue();
 
-// CAN recorder
+    // CAN记录器
 #ifndef REC_CAP
 #define REC_CAP 2000
 #endif
@@ -218,7 +218,7 @@ static volatile bool recActive = false;
 static volatile int recCount = 0;
 static bool recSaved = false;
 
-// CAN sniffer ring buffer
+    // CAN嗅探器环形缓冲区
 #define SNIFFER_CAP 30
 struct SniffFrame
 {
@@ -357,7 +357,7 @@ static void dashLog(const String &s)
     Serial.println(s);
 }
 
-// Public hooks
+    // 公共钩子
 static void mcpDashOnFrame(const CanFrame &f)
 {
     unsigned long now = millis();
@@ -431,7 +431,7 @@ static void mcpDashOnTxFrame(const CanFrame &frame, bool ok)
     memcpy(dashWriteProbe.txData, frame.data, dashWriteProbe.txDlc);
 }
 
-// JSON escape for log strings
+    // 日志字符串的JSON转义
 static String jsonEscape(const String &s)
 {
     String out;
@@ -734,7 +734,7 @@ static void dashApplyRuntimeState()
 #endif
 }
 
-// Store config
+    // 存储配置
 static void dashSavePrefs()
 {
     prefs.begin(PREFS_NS, false);
@@ -836,8 +836,7 @@ static void dashLoadPrefs()
     if (!hasStoredHw || storedHw > 2)
         migratedHw = true;
 
-    // If the stored selection only mirrors the old firmware default, follow the
-    // new build default after reflashing instead of staying pinned to stale NVS.
+    // 如果存储的选择仅反映旧固件默认值，则在重新刷写后跟随新的构建默认值，而不是固定在过时的NVS上。
     if (storedDefaultHw <= 2 && storedDefaultHw != DASH_DEFAULT_HW && hwMode == storedDefaultHw)
     {
         hwMode = DASH_DEFAULT_HW;
@@ -861,7 +860,7 @@ static void dashLoadPrefs()
     dashApplyRuntimeState();
     if (dashHandler)
         dashHandler->enablePrint = ep;
-    // Load WiFi AP overrides (hotspot name/password)
+    // 加载WiFi AP覆盖（热点名称/密码）
     String apSsidPref = prefs.isKey("ap_ssid") ? prefs.getString("ap_ssid", "") : "";
     String apPassPref = prefs.isKey("ap_pass") ? prefs.getString("ap_pass", "") : "";
     bool hasApOverride = apSsidPref.length() > 0 || apPassPref.length() > 0 || prefs.isKey("ap_hidden");
@@ -888,7 +887,7 @@ static void dashLoadPrefs()
         dashUseDefaultApConfig();
     }
 
-    // Load WiFi STA networks (multi-SSID slot array)
+    // 加载WiFi STA网络（多SSID槽位数组）
     wifiNetworkCount = 0;
     for (uint8_t i = 0; i < kDashMaxWifiNetworks; i++)
         dashClearWifiNetwork(wifiNetworks[i]);
@@ -921,7 +920,7 @@ static void dashLoadPrefs()
         wifiNetworkCount++;
     }
 
-    // One-shot migration from legacy single-SSID keys
+    // 从遗留单SSID键的一次性迁移
     if (wifiNetworkCount == 0 && prefs.isKey("wifi_ssid"))
     {
         String s = prefs.getString("wifi_ssid", "");
@@ -962,7 +961,7 @@ static void dashLoadPrefs()
         prefs.remove("wifi_dns");
     }
 
-    // Seed staSSID/staPass with first slot for compat with existing connect path
+    // 用第一个槽位填充staSSID/staPass以兼容现有连接路径
     if (wifiNetworkCount > 0)
     {
         const DashWifiNetwork &n = wifiNetworks[0];
@@ -1100,8 +1099,8 @@ static void dashFlushPluginStatesIfDue()
     pluginStatesDirty = false;
 }
 
-// MCP2515-only: fine-grained filter register reload on HW mode switch.
-// Other builds use dashDriver->setFilters() in dashSwapHandler instead.
+// 仅MCP2515：在硬件模式切换时重新加载精细过滤器寄存器。
+// 其他构建在dashSwapHandler中使用dashDriver->setFilters()。
 static void dashApplyFilters()
 {
 #if defined(DRIVER_ESP32_EXT_MCP2515)
@@ -1147,7 +1146,7 @@ static void dashApplyFilters()
 #endif
 }
 
-// Bus-off recovery (MCP2515 only — TWAI driver handles its own bus-off internally)
+// 总线关闭恢复（仅MCP2515 — TWAI驱动内部处理其自身的总线关闭）
 #if defined(DRIVER_ESP32_EXT_MCP2515)
 static unsigned long lastEflgCheckMs = 0;
 static void dashCheckBusHealth()
@@ -1625,13 +1624,13 @@ static void handleOtaUpload()
     }
 }
 
-// ── PLUGIN MANAGEMENT ───────────────────────────────────────────
+// ── 插件管理 ───────────────────────────────────────────
 
 static void dashReapplyFiltersWithPlugins()
 {
     if (!dashHandler || !dashDriver)
         return;
-    // Merge handler + plugin filter IDs
+    // 合并处理器 + 插件过滤器ID
     uint32_t mergedIds[32];
     uint8_t count = 0;
     const uint32_t *hIds = dashHandler->filterIds();
@@ -1778,7 +1777,7 @@ static void handlePluginList()
         j += ",\"priority\":" + String(i + 1);
         j += ",\"enabled\":" + String(pluginStore[i].enabled ? "true" : "false");
 
-        // Rule details
+        // 规则详情
         j += ",\"details\":[";
         for (uint8_t r = 0; r < pluginStore[i].ruleCount; r++)
         {
@@ -1869,7 +1868,7 @@ static bool pluginInstallJson(const String &json, const String &url)
     if (!pluginParseJson(json, temp))
         return false;
 
-    // Check for duplicate name
+    // 检查重复名称
     int existing = pluginFindByName(temp.name);
     if (existing < 0 && pluginCount >= PLUGIN_MAX)
         return false;
@@ -1882,13 +1881,13 @@ static bool pluginInstallJson(const String &json, const String &url)
         oldFilename = pluginStore[existing].filename;
     }
 
-    // Keep path under SPIFFS 31-character object name limit: "/p_" + base + ".json".
+    // 保持路径在SPIFFS 31字符对象名称限制内： "/p_" + base + ".json"。
     String fname = String(temp.name);
     fname.replace(" ", "_");
     fname.toLowerCase();
     const size_t maxSpiffsPathLen = 31;
-    const size_t prefixLen = 3; // "/p_"
-    const size_t suffixLen = 5; // ".json"
+    const size_t prefixLen = 3; // 前缀长度
+    const size_t suffixLen = 5; // 后缀长度
     const size_t maxBaseLen = maxSpiffsPathLen - prefixLen - suffixLen;
     if (fname.length() > maxBaseLen)
         fname = fname.substring(0, maxBaseLen);
@@ -1956,7 +1955,7 @@ static void handlePluginInstallFromUrl()
 
     HTTPClient http;
     WiFiClientSecure client;
-    client.setInsecure(); // skip cert verification for simplicity
+    client.setInsecure(); // 为简化跳过证书验证
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setTimeout(15000);
     http.begin(client, url);
@@ -2156,7 +2155,7 @@ static void handlePluginTestStop()
     server.send(200, "application/json", dashPluginTestStatusJson());
 }
 
-// ── WIFI STA ────────────────────────────────────────────────────
+// ── WiFi STA ────────────────────────────────────────────────────
 
 static bool dashStartAccessPoint(bool withSta)
 {
@@ -2261,7 +2260,7 @@ static void dashPrepareWifiScan()
     WiFi.setSleep(false);
 }
 
-static void performAutoUpdate(); // forward decl, defined below
+static void performAutoUpdate(); // 前向声明，定义在下方
 
 static void dashCheckWifi()
 {
@@ -2288,7 +2287,7 @@ static void dashCheckWifi()
             staConnectAttemptActive = false;
             staRetryAt = 0;
             dashLog("[WIFI] Connected to " + String(staSSID) + " IP: " + WiFi.localIP().toString());
-            // Schedule auto-update check 15 s after STA comes up (grace period for other boot work)
+            // 安排STA启动后15秒进行自动更新检查（其他启动工作的宽限期）
             if (autoUpdateEnabled && !autoUpdateDone)
                 autoUpdateEligibleAt = millis() + 15000;
         }
@@ -2309,7 +2308,7 @@ static void dashCheckWifi()
         dashLog("[WIFI] STA connect timed out; keeping AP-only mode");
     }
 
-    // Fire one-shot auto-update check once eligible
+    // 符合条件时触发一次性自动更新检查
     if (autoUpdateEnabled && !autoUpdateDone && staConnected && autoUpdateEligibleAt > 0 && millis() >= autoUpdateEligibleAt)
     {
         autoUpdateDone = true;
@@ -2372,7 +2371,7 @@ static void dashRemoveWifiSlotKeys(uint8_t slot)
     prefs.remove(dashWifiKey(slot, "d").c_str());
 }
 
-// Save to slot N (0..count). idx == count means append (new). Reconnect on save.
+// 保存到槽位N（0..count）。 idx == count 表示追加（新建）。保存后重新连接。
 static void handleWifiConfig()
 {
     if (!server.hasArg("ssid"))
@@ -2393,7 +2392,7 @@ static void handleWifiConfig()
     if (server.hasArg("idx"))
         idx = server.arg("idx").toInt();
     if (idx < 0 || idx > wifiNetworkCount)
-        idx = wifiNetworkCount; // append
+        idx = wifiNetworkCount; // 追加
 
     if (idx == kDashMaxWifiNetworks)
     {
@@ -2424,7 +2423,7 @@ static void handleWifiConfig()
 
     dashLog("[WIFI] Saved slot " + String(idx) + ": " + ssid);
 
-    // Switch to newly saved slot and connect
+    // 切换到新保存的槽位并连接
     wifiNextRotateSlot = idx;
     dashApplyWifiSlot(idx);
     dashPrepareStaReconnect();
@@ -2448,13 +2447,13 @@ static void handleWifiDelete()
     }
 
     String removedSsid = wifiNetworks[idx].ssid;
-    // Shift slots down
+    // 向下移动槽位
     for (uint8_t i = idx; i + 1 < wifiNetworkCount; i++)
         wifiNetworks[i] = wifiNetworks[i + 1];
     wifiNetworkCount--;
     dashClearWifiNetwork(wifiNetworks[wifiNetworkCount]);
 
-    // Rewrite all slot keys
+    // 重写所有槽位键
     prefs.begin(PREFS_NS, false);
     prefs.putUChar("wn_cnt", wifiNetworkCount);
     for (uint8_t i = 0; i < wifiNetworkCount; i++)
@@ -2465,7 +2464,7 @@ static void handleWifiDelete()
 
     dashLog("[WIFI] Deleted slot " + String(idx) + ": " + removedSsid);
 
-    // Adjust active slot if needed
+    // 必要时调整活动槽位
     if (wifiActiveSlot == idx)
     {
         wifiActiveSlot = -1;
@@ -2561,7 +2560,7 @@ static void handleWifiStatus()
     server.send(200, "application/json", j);
 }
 
-// ── AP Config (hotspot name/password) ───────────────────────────
+// ── AP配置（热点名称/密码）───────────────────────────
 
 static void handleCanPins()
 {
@@ -2614,7 +2613,7 @@ static void handleCanPinsSave()
 #define DASH_ALLOW_CAN_GPIO_6_11 0
 #endif
 #if !DASH_ALLOW_CAN_GPIO_6_11
-    // GPIO 6-11 are reserved for SPI flash on most ESP32 modules
+    // GPIO 6-11在大多数ESP32模块上保留给SPI闪存使用
     if ((tx >= 6 && tx <= 11) || (rx >= 6 && rx <= 11))
     {
         server.send(400, "application/json", "{\"ok\":false,\"error\":\"GPIO 6-11 reserved for flash\"}");
@@ -2636,7 +2635,7 @@ static void handleCanPinsSave()
     server.send(200, "application/json", "{\"ok\":true,\"reboot\":true}");
 }
 
-// ── Settings Backup / Restore ───────────────────────────────────
+// ── 设置备份/恢复 ───────────────────────────────────
 
 static void handleSettingsExport()
 {
@@ -2846,7 +2845,7 @@ static void handleApStatus()
     server.send(200, "application/json", j);
 }
 
-// ── OTA GitHub Update ───────────────────────────────────────────
+// ── OTA GitHub更新 ───────────────────────────────────────────
 
 #ifndef FIRMWARE_VERSION
 #define FIRMWARE_VERSION "unknown"
@@ -2854,7 +2853,7 @@ static void handleApStatus()
 
 static const char *GITHUB_REPO = "ev-open-can-tools/ev-open-can-tools";
 
-// Map driver type to release artifact filename
+// 映射驱动类型到发布产物文件名
 static const char *getFirmwareArtifact()
 {
 #if defined(DRIVER_ESP32_EXT_MCP2515)
@@ -2864,10 +2863,10 @@ static const char *getFirmwareArtifact()
 #endif
 }
 
-// Parse a semver-ish version string into (major, minor, patch, preRank, preNum).
-// Pre-release rank: 0 = stable (no suffix, sorts highest among same M.m.p),
-//                  1 = -alpha.N, 2 = -beta.N, 3 = -rc.N (higher rank = closer to stable).
-// Unknown suffix → treated as stable (rank 0).
+// 将类semver版本字符串解析为（主版本号，次版本号，修订号，预发布等级，预发布编号）。
+// 预发布等级：0 = 稳定版（无后缀，在同M.m.p中排序最高），
+//                  1 = -alpha.N，2 = -beta.N，3 = -rc.N（等级越高越接近稳定版）。
+// 未知后缀 → 视为稳定版（等级0）。
 static void parseVersion(const String &v, int &maj, int &min, int &pat, int &preRank, int &preNum)
 {
     maj = min = pat = 0;
@@ -2911,14 +2910,14 @@ static void parseVersion(const String &v, int &maj, int &min, int &pat, int &pre
         else if (tail.startsWith("rc"))
             preRank = 3;
         else
-            preRank = 0; // unknown → treat as stable
+            preRank = 0; // 未知 → 视为稳定版
         int dot = tail.indexOf('.');
         if (dot >= 0)
             preNum = tail.substring(dot + 1).toInt();
     }
 }
 
-// Returns true iff `candidate` is strictly newer than `current`.
+// 当且仅当`candidate`严格新于`current`时返回true。
 static bool isVersionNewer(const String &candidate, const String &current)
 {
     int cM, cm, cp, cR, cN;
@@ -2931,9 +2930,9 @@ static bool isVersionNewer(const String &candidate, const String &current)
         return cm > um;
     if (cp != up)
         return cp > up;
-    // Same M.m.p — stable (rank 0) beats any prerelease (rank 1-3)
-    // For two prereleases: higher rank beats lower (rc > beta > alpha)
-    int cEff = (cR == 0) ? 1000 : cR; // stable → very high
+    // 相同M.m.p — 稳定版（等级0）胜过任何预发布版（等级1-3）
+    // 对于两个预发布版：更高等级胜过更低等级（rc > beta > alpha）
+    int cEff = (cR == 0) ? 1000 : cR; // 稳定版 → 非常高
     int uEff = (uR == 0) ? 1000 : uR;
     if (cEff != uEff)
         return cEff > uEff;
@@ -2981,7 +2980,7 @@ static void handleUpdateCheck()
         return;
     }
 
-    // Find the right release
+    // 找到正确的发布版本
     JsonObject release;
     if (updateBetaChannel)
     {
@@ -2989,7 +2988,7 @@ static void handleUpdateCheck()
         for (JsonObject r : arr)
         {
             release = r;
-            break; // first (newest) release
+            break; // 第一个（最新的）发布版本
         }
     }
     else
@@ -3009,7 +3008,7 @@ static void handleUpdateCheck()
     if (version.startsWith("v"))
         version = version.substring(1);
 
-    // Find the matching firmware asset
+    // 找到匹配的固件资源
     String downloadUrl = "";
     const char *artifact = getFirmwareArtifact();
     JsonArray assets = release["assets"];
@@ -3059,7 +3058,7 @@ static void handleUpdateInstall()
     WiFiClientSecure client;
     client.setInsecure();
 
-    // Follow redirects — GitHub release assets redirect to S3
+    // 跟随重定向 — GitHub发布资源重定向到S3
     HTTPClient http;
     http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
     http.begin(client, url);
@@ -3118,8 +3117,8 @@ static void handleUpdateInstall()
     ESP.restart();
 }
 
-// Check GitHub for a newer release and, if found, download + install it.
-// Blocking; on success calls ESP.restart() and never returns.
+// 检查GitHub是否有更新版本，如果找到则下载并安装。
+// 阻塞式；成功时调用ESP.restart()并永不返回。
 static void performAutoUpdate()
 {
     if (!staConnected)
@@ -3280,7 +3279,7 @@ static void handleUpdateBeta()
     server.send(200, "application/json", j);
 }
 
-// ── Plugin frame callback wrapper ───────────────────────────────
+// ── 插件帧回调包装器 ───────────────────────────────
 
 static void dashPluginTestCapture(const CanFrame &frame)
 {
@@ -3397,9 +3396,9 @@ static void dashSwapHandler(uint8_t mode)
     appActiveHandler = next;
     dashHandler = next;
     dashApplyRuntimeState();
-    // Update driver acceptance filters for the new handler.
-    // For MCP2515 (ext) dashApplyFilters() will also fine-tune the hardware
-    // filter registers. For TWAI and old MCP2515 this abstract call is enough.
+    // 为新处理器更新驱动接受过滤器。
+    // 对于MCP2515（扩展版），dashApplyFilters()还会微调硬件
+    // 过滤器寄存器。对于TWAI和旧版MCP2515，这个抽象调用就足够了。
     if (dashDriver)
         dashDriver->setFilters(next->filterIds(), next->filterIdCount());
     const char *hwName = "LEGACY";
@@ -3443,7 +3442,7 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     dashSwapHandler(hwMode);
     dashApplyFilters();
 
-    // Load plugins from SPIFFS
+    // 从SPIFFS加载插件
     pluginLoadAll();
     dashRestorePluginStates();
     if (pluginCount > 0)
@@ -3452,7 +3451,7 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
         dashReapplyFiltersWithPlugins();
     }
 
-    // Set plugin processing hook
+    // 设置插件处理钩子
     appPluginProcess = dashPluginProcess;
     pluginBeforeSend = dashApplyHw3OffsetSlew;
 

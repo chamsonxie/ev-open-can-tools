@@ -27,12 +27,12 @@ void setUp()
 
 void tearDown() {}
 
-// --- Speed profile from stalk position (CAN ID 69) ---
+// --- 基于拨杆位置的速度配置文件 (CAN ID 69) ---
 
 void test_legacy_stalk_pos0_sets_profile_2()
 {
     CanFrame f = {.id = 69};
-    f.data[1] = 0x00; // pos = 0 >> 5 = 0
+    f.data[1] = 0x00; // 位置 = 0 >> 5 = 0
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(2, handler.speedProfile);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
@@ -41,7 +41,7 @@ void test_legacy_stalk_pos0_sets_profile_2()
 void test_legacy_stalk_pos1_sets_profile_2()
 {
     CanFrame f = {.id = 69};
-    f.data[1] = 0x21; // pos = 0x21 >> 5 = 1
+    f.data[1] = 0x21; // 位置 = 0x21 >> 5 = 1
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(2, handler.speedProfile);
 }
@@ -49,7 +49,7 @@ void test_legacy_stalk_pos1_sets_profile_2()
 void test_legacy_stalk_pos2_sets_profile_1()
 {
     CanFrame f = {.id = 69};
-    f.data[1] = 0x42; // pos = 0x42 >> 5 = 2
+    f.data[1] = 0x42; // 位置 = 0x42 >> 5 = 2
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(1, handler.speedProfile);
 }
@@ -57,7 +57,7 @@ void test_legacy_stalk_pos2_sets_profile_1()
 void test_legacy_stalk_pos3_sets_profile_0()
 {
     CanFrame f = {.id = 69};
-    f.data[1] = 0x64; // pos = 0x64 >> 5 = 3
+    f.data[1] = 0x64; // 位置 = 0x64 >> 5 = 3
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(0, handler.speedProfile);
 }
@@ -68,20 +68,20 @@ void test_legacy_manual_profile_ignores_stalk_position()
     handler.speedProfile = 1;
 
     CanFrame f = {.id = 69};
-    f.data[1] = 0x00; // would map to profile 2
+    f.data[1] = 0x00; // 将映射到配置文件 2
     handler.handleMessage(f, mock);
 
     TEST_ASSERT_EQUAL_INT(1, handler.speedProfile);
     TEST_ASSERT_FALSE(handler.speedProfileAuto);
 }
 
-// --- AD activation (CAN ID 1006) ---
+// --- AD 激活 (CAN ID 1006) ---
 
 void test_legacy_AD_enabled_on_mux0()
 {
     CanFrame f = {.id = 1006};
-    f.data[0] = 0x00; // mux 0
-    f.data[4] = 0x20; // AD bit set
+    f.data[0] = 0x00; // MUX 0
+    f.data[4] = 0x20; // AD 位已设置
     handler.handleMessage(f, mock);
     TEST_ASSERT_TRUE(handler.ADEnabled);
     TEST_ASSERT_EQUAL(1, mock.sent.size());
@@ -90,8 +90,8 @@ void test_legacy_AD_enabled_on_mux0()
 void test_legacy_no_send_when_AD_disabled()
 {
     CanFrame f = {.id = 1006};
-    f.data[0] = 0x00; // mux 0
-    f.data[4] = 0x00; // AD bit NOT set
+    f.data[0] = 0x00; // MUX 0
+    f.data[4] = 0x00; // AD 位未设置
     handler.handleMessage(f, mock);
     TEST_ASSERT_FALSE(handler.ADEnabled);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
@@ -130,13 +130,13 @@ void test_legacy_checkAD_blocks_mux0_send()
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
-// --- Nag suppression (mux 1) ---
+// --- 提示抑制 (MUX 1) ---
 
 void test_legacy_nag_suppression_clears_bit19_on_mux1()
 {
     CanFrame f = {.id = 1006};
-    f.data[0] = 0x01;    // mux 1
-    setBit(f, 19, true); // pre-set nag bit
+    f.data[0] = 0x01;    // MUX 1
+    setBit(f, 19, true); // 预置提示位
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL(1, mock.sent.size());
     TEST_ASSERT_FALSE((mock.sent[0].data[2] >> 3) & 0x01);
@@ -153,7 +153,7 @@ void test_legacy_checkNag_blocks_mux1_send()
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
-// --- No sends on unrelated CAN IDs ---
+// --- 无关 CAN ID 不发送 ---
 
 void test_legacy_ignores_unrelated_can_id()
 {
@@ -162,7 +162,7 @@ void test_legacy_ignores_unrelated_can_id()
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
-// --- Filter IDs ---
+// --- 过滤器 ID ---
 
 void test_legacy_filter_ids_count()
 {

@@ -26,12 +26,12 @@ void setUp()
 
 void tearDown() {}
 
-// --- Speed profile from follow distance (CAN ID 1016) ---
+// --- 基于跟车距离的速度配置文件 (CAN ID 1016) ---
 
 void test_hw4_follow_distance_1_sets_profile_3()
 {
     CanFrame f = {.id = 1016};
-    f.data[5] = 0b00100000; // fd = 1
+    f.data[5] = 0b00100000; // 跟车距离 = 1
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(3, handler.speedProfile);
 }
@@ -39,7 +39,7 @@ void test_hw4_follow_distance_1_sets_profile_3()
 void test_hw4_follow_distance_2_sets_profile_2()
 {
     CanFrame f = {.id = 1016};
-    f.data[5] = 0b01000000; // fd = 2
+    f.data[5] = 0b01000000; // 跟车距离 = 2
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(2, handler.speedProfile);
 }
@@ -47,7 +47,7 @@ void test_hw4_follow_distance_2_sets_profile_2()
 void test_hw4_follow_distance_3_sets_profile_1()
 {
     CanFrame f = {.id = 1016};
-    f.data[5] = 0b01100000; // fd = 3
+    f.data[5] = 0b01100000; // 跟车距离 = 3
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(1, handler.speedProfile);
 }
@@ -55,7 +55,7 @@ void test_hw4_follow_distance_3_sets_profile_1()
 void test_hw4_follow_distance_4_sets_profile_0()
 {
     CanFrame f = {.id = 1016};
-    f.data[5] = 0b10000000; // fd = 4
+    f.data[5] = 0b10000000; // 跟车距离 = 4
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(0, handler.speedProfile);
 }
@@ -63,7 +63,7 @@ void test_hw4_follow_distance_4_sets_profile_0()
 void test_hw4_follow_distance_5_sets_profile_4()
 {
     CanFrame f = {.id = 1016};
-    f.data[5] = 0b10100000; // fd = 5
+    f.data[5] = 0b10100000; // 跟车距离 = 5
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(4, handler.speedProfile);
 }
@@ -74,14 +74,14 @@ void test_hw4_manual_profile_ignores_follow_distance()
     handler.speedProfile = 1;
 
     CanFrame f = {.id = 1016};
-    f.data[5] = 0b00100000; // fd = 1 would map to profile 3
+    f.data[5] = 0b00100000; // 跟车距离 = 1 将映射到配置文件 3
     handler.handleMessage(f, mock);
 
     TEST_ASSERT_EQUAL_INT(1, handler.speedProfile);
     TEST_ASSERT_FALSE(handler.speedProfileAuto);
 }
 
-// --- AD shadowing fix regression test ---
+// --- AD 影子修复回归测试 ---
 
 void test_hw4_AD_enabled_only_set_on_mux0()
 {
@@ -94,13 +94,13 @@ void test_hw4_AD_enabled_only_set_on_mux0()
     mock.reset();
     CanFrame f2 = {.id = 1021};
     f2.data[0] = 0x02;
-    f2.data[4] = 0x00; // AD bit not set in mux 2
+    f2.data[4] = 0x00; // MUX 2 中 AD 位未设置
     handler.handleMessage(f2, mock);
     TEST_ASSERT_TRUE(handler.ADEnabled);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
-// --- AD activation (mux 0) ---
+// --- AD 激活 (MUX 0) ---
 
 void test_hw4_AD_mux0_sets_bits_46_and_60()
 {
@@ -109,8 +109,8 @@ void test_hw4_AD_mux0_sets_bits_46_and_60()
     f.data[4] = 0x20;
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL(1, mock.sent.size());
-    TEST_ASSERT_EQUAL_HEX8(0x40, mock.sent[0].data[5] & 0x40); // bit 46
-    TEST_ASSERT_EQUAL_HEX8(0x10, mock.sent[0].data[7] & 0x10); // bit 60
+    TEST_ASSERT_EQUAL_HEX8(0x40, mock.sent[0].data[5] & 0x40); // 位 46
+    TEST_ASSERT_EQUAL_HEX8(0x10, mock.sent[0].data[7] & 0x10); // 位 60
 }
 
 void test_hw4_AD_mux0_sets_emergency_bit59()
@@ -120,7 +120,7 @@ void test_hw4_AD_mux0_sets_emergency_bit59()
     f.data[4] = 0x20;
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL(1, mock.sent.size());
-    TEST_ASSERT_EQUAL_HEX8(0x08, mock.sent[0].data[7] & 0x08); // bit 59
+    TEST_ASSERT_EQUAL_HEX8(0x08, mock.sent[0].data[7] & 0x08); // 位 59
 }
 
 void test_hw4_AD_mux0_skips_emergency_bit59_when_runtime_disabled()
@@ -163,7 +163,7 @@ void test_hw4_checkAD_blocks_mux0_and_mux2_send()
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
-// --- Nag suppression (mux 1) ---
+// --- 提示抑制 (MUX 1) ---
 
 void test_hw4_nag_suppression_clears_bit19_sets_bit47()
 {
@@ -172,8 +172,8 @@ void test_hw4_nag_suppression_clears_bit19_sets_bit47()
     setBit(f, 19, true);
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL(1, mock.sent.size());
-    TEST_ASSERT_FALSE((mock.sent[0].data[2] >> 3) & 0x01);     // bit 19 cleared
-    TEST_ASSERT_EQUAL_HEX8(0x80, mock.sent[0].data[5] & 0x80); // bit 47 set
+    TEST_ASSERT_FALSE((mock.sent[0].data[2] >> 3) & 0x01);     // 位 19 已清除
+    TEST_ASSERT_EQUAL_HEX8(0x80, mock.sent[0].data[5] & 0x80); // 位 47 已设置
 }
 
 void test_hw4_nag_suppression_skips_mux1_changes_when_eap_runtime_disabled()
@@ -183,10 +183,10 @@ void test_hw4_nag_suppression_skips_mux1_changes_when_eap_runtime_disabled()
     f.data[0] = 0x01;
     setBit(f, 19, true);
     handler.handleMessage(f, mock);
-    TEST_ASSERT_EQUAL(0, mock.sent.size()); // frame are not sent when runtime disabled
+    TEST_ASSERT_EQUAL(0, mock.sent.size()); // 运行时禁用时不发送帧
 }
 
-// --- Profile is observed but not injected (mux 2 stays silent) ---
+// --- 配置文件被观测但不注入 (MUX 2 保持静默) ---
 void test_hw4_mux2_does_not_inject_speed_profile()
 {
     handler.speedProfile = 3;
@@ -212,11 +212,11 @@ void test_hw4_mux2_preserves_old_profile_bits_by_not_sending()
     mock.reset();
     CanFrame f = {.id = 1021};
     f.data[0] = 0x02;
-    f.data[7] = 0x70; // old profile bits all set
+    f.data[7] = 0x70; // 旧的配置文件位全部设置
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
-// --- Send counts ---
+// --- 发送计数 ---
 
 void test_hw4_mux0_AD_enabled_sends_1()
 {
@@ -270,7 +270,7 @@ void test_hw4_ignores_unrelated_can_id()
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
-// --- ISA speed chime suppression (CAN ID 921) ---
+// --- ISA 速度提示抑制 (CAN ID 921) ---
 
 void test_hw4_isa_suppress_sets_bit5_of_data1()
 {
@@ -300,10 +300,10 @@ void test_hw4_isa_suppress_checksum_correct()
     f.data[5] = 0x00;
     f.data[6] = 0x00;
     handler.handleMessage(f, mock);
-    // After OR: data[1] = 0x25
-    // sum of data[0..6] = 0x10 + 0x25 = 0x35
-    // sum += (921 & 0xFF) + (921 >> 8) = 0x99 + 0x03 = 0x9C
-    // total = 0x35 + 0x9C = 0xD1
+    // 或运算后：data[1] = 0x25
+    // data[0..6] 之和 = 0x10 + 0x25 = 0x35
+    // 和 += (921 & 0xFF) + (921 >> 8) = 0x99 + 0x03 = 0x9C
+    // 总计 = 0x35 + 0x9C = 0xD1
     TEST_ASSERT_EQUAL_HEX8(0xD1, mock.sent[0].data[7]);
 }
 
@@ -312,7 +312,7 @@ void test_hw4_isa_suppress_returns_early_no_further_processing()
     handler.ADEnabled = true;
     CanFrame f = {.id = 921};
     handler.handleMessage(f, mock);
-    TEST_ASSERT_EQUAL(1, mock.sent.size()); // only the ISA send, not any AD logic
+    TEST_ASSERT_EQUAL(1, mock.sent.size()); // 仅 ISA 发送，非任何 AD 逻辑
 }
 
 void test_hw4_isa_suppress_runtime_off_skips_send()
@@ -326,7 +326,7 @@ void test_hw4_isa_suppress_runtime_off_skips_send()
 void test_hw4_das_status_available_does_not_mark_ap_active()
 {
     CanFrame f = {.id = 921};
-    f.data[0] = 0x02; // AVAILABLE
+    f.data[0] = 0x02; // 可用
 
     handler.handleMessage(f, mock);
 
@@ -336,7 +336,7 @@ void test_hw4_das_status_available_does_not_mark_ap_active()
 void test_hw4_das_status_active_marks_ap_active()
 {
     CanFrame f = {.id = 921};
-    f.data[0] = 0x04; // ACTIVE_2
+    f.data[0] = 0x04; // 激活_2
 
     handler.handleMessage(f, mock);
 
@@ -347,7 +347,7 @@ void test_hw4_gw_autopilot_mux2_updates_state_without_send()
 {
     CanFrame f = {.id = 2047};
     f.data[0] = 0x02;
-    f.data[5] = 0x0C; // SELF_DRIVING = 3
+    f.data[5] = 0x0C; // 完全自动驾驶 = 3
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL_INT(3, handler.gatewayAutopilot);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
@@ -378,7 +378,7 @@ void test_hw4_gear_drive_clears_parked()
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
-// --- Filter IDs ---
+// --- 过滤器 ID ---
 
 void test_hw4_filter_ids_count()
 {
