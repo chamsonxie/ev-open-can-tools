@@ -26,35 +26,3 @@
 #define DASH_PASS "1024381808"      // WiFi 密码（至少 8 个字符）
 #define DASH_OTA_USER "admin"       // OTA 用户名
 #define DASH_OTA_PASS "changeme"    // OTA 密码
-
-// #define DASH_INJECTION_ON_BOOT  // 启动后自动开始注入；默认为停止
-
-// ── GTW UDS 静默密钥 ────────────────────────────────────────────
-// 插件规则中 gtw_silent: true 实际静默网关所必需。
-// 没有此项，gtw_silent 在 JSON 中被接受但运行时被忽略。
-//
-// 固件期望使用单个 XOR 字节将 GTW 种子转换为密钥。
-// 如果您有已知的种子/密钥对，请在本地
-// Linux 机器上验证或推导该字节：
-//
-// python3 - <<'PY'
-// seed = bytes.fromhex("001122334455")  # 替换为捕获到的种子
-// key = bytes.fromhex("350417067160")   # 替换为匹配的密钥
-// if len(seed) != len(key) or not seed:
-//     raise SystemExit("seed/key length mismatch")
-// xor_key = seed[0] ^ key[0]
-// if any((s ^ xor_key) != k for s, k in zip(seed, key)):
-//     raise SystemExit("seed/key pair is not a single-byte XOR key")
-// print(f"0x{xor_key:02X}")
-// PY
-//
-// 将打印出的字节粘贴到 PLUGIN_GTW_UDS_KEY_READY 之后。
-// #define PLUGIN_GTW_UDS_KEY_READY 0xAB
-
-// ── 行为选项 ──────────────────────────────────────────────────
-// 取消注释以下任意一行：
-// #define ISA_SPEED_CHIME_SUPPRESS    // 抑制 ISA 速度提示音；驾驶时限速标志将显示为空
-// #define EMERGENCY_VEHICLE_DETECTION // 启用紧急车辆检测
-// #define BYPASS_TLSSC_REQUIREMENT    // 始终启用 drivepilot，无需"交通灯和停车标志控制"开关
-// #define NAG_KILLER                  // 抑制 Autosteer"手握方向盘"提示（CAN 880 计数器+1 回显，X179 引脚 2/3）
-// #define ENHANCED_AUTOPILOT          // 在 HW3/HW4 上启用 UI_applyEceR79 覆盖，并在 HW4 上启用召唤

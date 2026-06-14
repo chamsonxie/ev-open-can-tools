@@ -16,7 +16,7 @@ class PlatformioSetProfileTest(unittest.TestCase):
                 "\n".join(
                     line
                     for line in source.read_text(encoding="utf-8").splitlines()
-                    if "INJECTION_AFTER_AP" not in line
+                    if "DASH_RGB_STATUS_LED" not in line
                 )
                 + "\n",
                 encoding="utf-8",
@@ -31,7 +31,7 @@ class PlatformioSetProfileTest(unittest.TestCase):
                     "--vehicle",
                     "HW3",
                     "--enable",
-                    "INJECTION_AFTER_AP",
+                    "DASH_RGB_STATUS_LED",
                     "--file",
                     str(profile),
                 ],
@@ -42,7 +42,7 @@ class PlatformioSetProfileTest(unittest.TestCase):
             )
 
             self.assertIn(
-                "#define INJECTION_AFTER_AP",
+                "#define DASH_RGB_STATUS_LED",
                 profile.read_text(encoding="utf-8"),
             )
 

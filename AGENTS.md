@@ -27,6 +27,5 @@ This is an ESP32-based CAN-bus modification firmware for Tesla vehicles. See `.o
 ### Architecture
 - `include/drivers/` — CAN driver abstraction (TWAI, MCP2515, SAME51, Mock)
 - `include/handlers.h` — Vehicle-specific message handlers (Legacy, HW3, HW4, Nag)
-- `include/plugin_engine.h` — JSON-defined plugin system (8 plugins, 16 rules each)
 - `include/app.h` — Template-based application framework (setup/loop)
 - `include/web/mcp2515_dashboard.h` — Dashboard web server

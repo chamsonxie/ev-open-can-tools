@@ -18,9 +18,9 @@
 #include <Preferences.h>
 #include <SPIFFS.h>
 #endif
+#include <ArduinoJson.h>
 #include "handlers.h"
 #include "can_helpers.h"
-#include "plugin_engine.h"
 #if defined(DRIVER_ESP32_EXT_MCP2515)
 #include "drivers/esp32_mcp2515_driver.h"
 #endif
@@ -44,18 +44,6 @@ static_assert(sizeof(DASH_PASS) >= 9 && sizeof(DASH_PASS) <= 65, "DASH_PASS must
 
 #ifndef DASH_DEFAULT_HW
 #define DASH_DEFAULT_HW 1
-#endif
-
-#if defined(DASH_INJECTION_ON_BOOT)
-static constexpr bool kDashInjectionDefaultEnabled = true;
-#else
-static constexpr bool kDashInjectionDefaultEnabled = false;
-#endif
-
-#if defined(INJECTION_AFTER_AP) || defined(DASH_INJECTION_AFTER_AP)
-static constexpr bool kDashApGateDefaultEnabled = true;
-#else
-static constexpr bool kDashApGateDefaultEnabled = false;
 #endif
 
 #if defined(DRIVER_TWAI)
@@ -105,20 +93,6 @@ static const uint8_t mcpEflg = 0;
 #endif
 
 static uint8_t hwMode = DASH_DEFAULT_HW;
-static bool canActive = kDashInjectionDefaultEnabled;
-static bool apInjectionGate = kDashApGateDefaultEnabled;
-static bool dashSpeedProfileAuto = true;
-static uint8_t dashManualSpeedProfile = 1;
-
-static constexpr uint8_t kHw3SlewRateMin = 1;
-static constexpr uint8_t kHw3SlewRateMax = 25;
-static constexpr uint8_t kHw3SlewRateDefault = 5;
-static bool hw3OffsetSlew = false;
-static uint8_t hw3SlewRate = kHw3SlewRateDefault;
-static uint8_t hw3OffsetTargetRaw = 0;
-static uint8_t hw3OffsetLastRaw = 0;
-static uint32_t hw3OffsetLastSentMs = 0;
-static uint32_t hw3OffsetSlewCount = 0;
 
 #ifdef RGB_BRIGHTNESS
 static constexpr uint8_t kDashLedBrightnessDefault = RGB_BRIGHTNESS;
@@ -195,12 +169,7 @@ static void dashClearWifiNetwork(DashWifiNetwork &n)
 static void dashRotateAndConnect();
 static void dashSwapHandler(uint8_t mode);
 static void dashApplyFilters();
-static void dashReapplyFiltersWithPlugins();
 static void dashApplyRuntimeState();
-static void dashRestorePluginStates();
-static void dashClearLegacyOptionPrefs();
-static void dashSchedulePluginStateSave(unsigned long delayMs = 750);
-static void dashFlushPluginStatesIfDue();
 
     // CAN记录器
 #ifndef REC_CAP
@@ -230,71 +199,6 @@ struct SniffFrame
 static SniffFrame sniffBuf[SNIFFER_CAP];
 static int sniffHead = 0;
 static int sniffCount = 0;
-
-struct PluginTestState
-{
-    bool active = false;
-    bool waitingForFrame = false;
-    CanFrame frame = {};
-    PluginRule rule = {};
-    uint16_t total = 0;
-    uint16_t sent = 0;
-    uint16_t intervalMs = 100;
-    unsigned long nextSendAt = 0;
-};
-static PluginTestState pluginTestState;
-static bool pluginStatesDirty = false;
-static unsigned long pluginStatesFlushAt = 0;
-
-enum DashWriteProbeState : uint8_t
-{
-    kDashWriteProbeIdle = 0,
-    kDashWriteProbePending = 1,
-    kDashWriteProbeMatch = 2,
-    kDashWriteProbeDifferent = 3,
-    kDashWriteProbeFailed = 4,
-};
-
-struct DashWriteProbe
-{
-    bool active = false;
-    bool hasRx = false;
-    uint8_t state = kDashWriteProbeIdle;
-    uint32_t id = 0;
-    int8_t mux = -1;
-    uint8_t txDlc = 0;
-    uint8_t rxDlc = 0;
-    uint8_t txData[8] = {};
-    uint8_t rxData[8] = {};
-    unsigned long txMs = 0;
-    unsigned long rxMs = 0;
-};
-static DashWriteProbe dashWriteProbe;
-
-static int8_t dashFrameMux(const CanFrame &frame)
-{
-    if ((frame.id == 1006 || frame.id == 1021) && frame.dlc > 0)
-        return static_cast<int8_t>(readMuxID(frame));
-    return -1;
-}
-
-static void dashResetWriteProbe()
-{
-    dashWriteProbe = {};
-    dashWriteProbe.mux = -1;
-    dashWriteProbe.state = kDashWriteProbeIdle;
-}
-
-static bool dashWriteProbeMatches(const CanFrame &frame)
-{
-    if (!dashWriteProbe.active || dashWriteProbe.id != frame.id)
-        return false;
-
-    int8_t mux = dashFrameMux(frame);
-    if (dashWriteProbe.mux < 0)
-        return mux < 0;
-    return mux == dashWriteProbe.mux;
-}
 
 static const char *decodeCanId(uint32_t id)
 {
@@ -389,46 +293,6 @@ static void mcpDashOnFrame(const CanFrame &f)
                 recActive = false;
         }
     }
-    if (dashWriteProbe.active && dashWriteProbe.state != kDashWriteProbeFailed && dashWriteProbeMatches(f))
-    {
-        dashWriteProbe.hasRx = true;
-        dashWriteProbe.rxMs = now;
-        dashWriteProbe.rxDlc = (f.dlc <= 8) ? f.dlc : 8;
-        memset(dashWriteProbe.rxData, 0, sizeof(dashWriteProbe.rxData));
-        memcpy(dashWriteProbe.rxData, f.data, dashWriteProbe.rxDlc);
-        bool same = dashWriteProbe.txDlc == dashWriteProbe.rxDlc &&
-                    memcmp(dashWriteProbe.txData, dashWriteProbe.rxData, dashWriteProbe.txDlc) == 0;
-        dashWriteProbe.state = same ? kDashWriteProbeMatch : kDashWriteProbeDifferent;
-    }
-}
-
-static void mcpDashOnTxFrame(const CanFrame &frame, bool ok)
-{
-    txCount++;
-    int8_t mux = dashFrameMux(frame);
-    if (!ok)
-    {
-        txErrCount++;
-        if (mux >= 0 && mux < 4)
-            muxErr[mux]++;
-    }
-    else if (mux >= 0 && mux < 4)
-    {
-        muxTx[mux]++;
-    }
-
-    dashWriteProbe.active = true;
-    dashWriteProbe.hasRx = false;
-    dashWriteProbe.state = ok ? kDashWriteProbePending : kDashWriteProbeFailed;
-    dashWriteProbe.id = frame.id;
-    dashWriteProbe.mux = mux;
-    dashWriteProbe.txMs = millis();
-    dashWriteProbe.rxMs = 0;
-    dashWriteProbe.txDlc = (frame.dlc <= 8) ? frame.dlc : 8;
-    dashWriteProbe.rxDlc = 0;
-    memset(dashWriteProbe.txData, 0, sizeof(dashWriteProbe.txData));
-    memset(dashWriteProbe.rxData, 0, sizeof(dashWriteProbe.rxData));
-    memcpy(dashWriteProbe.txData, frame.data, dashWriteProbe.txDlc);
 }
 
     // 日志字符串的JSON转义
@@ -455,280 +319,14 @@ static String jsonEscape(const String &s)
     return out;
 }
 
-static bool dashCheckADEnabled()
-{
-    return canActive;
-}
-
-static bool dashApInjectionAllowed()
-{
-    return !apInjectionGate || (dashHandler && dashHandler->injectionGateOpen());
-}
-
-static bool dashInjectionActive()
-{
-    return canActive && dashApInjectionAllowed();
-}
-
-static long dashAgeMs(uint32_t seenMs, unsigned long now)
-{
-    if (seenMs == 0)
-        return -1;
-    return static_cast<long>(now - seenMs);
-}
-
-static const char *dashGateReason(bool enabled, bool allowed, bool ap, bool parked, bool summoning)
-{
-    if (!enabled)
-        return "off";
-    if (!canActive)
-        return "blocked";
-    if (!dashHandler)
-        return "unknown";
-    if (allowed)
-    {
-        if (ap)
-            return "ap_active";
-        if (parked)
-            return "parked";
-        if (summoning)
-            return "summoning";
-        return "unknown";
-    }
-    return "waiting_ap";
-}
-
-static unsigned long dashApStableStartedMs = 0;
-static bool dashLastApForLog = false;
-static bool dashLastGateLogValid = false;
-static bool dashLastGateAllowed = false;
-static bool dashLastGateAp = false;
-static bool dashLastGateParked = false;
-static bool dashLastGateSummoning = false;
-static String dashLastGateReason;
-
-static void dashLogGateStateIfChanged(bool allowed, const char *reason, bool ap, bool parked, bool summoning)
-{
-    unsigned long now = millis();
-    if (ap && !dashLastApForLog)
-    {
-        dashApStableStartedMs = now;
-        dashLog("[APGATE] AP rising edge");
-    }
-    else if (!ap && dashLastApForLog)
-    {
-        dashApStableStartedMs = 0;
-        dashLog("[APGATE] AP falling edge");
-    }
-    dashLastApForLog = ap;
-
-    String reasonStr(reason);
-    if (!dashLastGateLogValid || allowed != dashLastGateAllowed || ap != dashLastGateAp ||
-        parked != dashLastGateParked || summoning != dashLastGateSummoning ||
-        reasonStr != dashLastGateReason)
-    {
-        dashLog("[APGATE] reason=" + reasonStr + " ap=" + String(ap ? 1 : 0) +
-                " parked=" + String(parked ? 1 : 0) + " summon=" + String(summoning ? 1 : 0) +
-                " allowed=" + String(allowed ? 1 : 0));
-        dashLastGateLogValid = true;
-        dashLastGateAllowed = allowed;
-        dashLastGateAp = ap;
-        dashLastGateParked = parked;
-        dashLastGateSummoning = summoning;
-        dashLastGateReason = reasonStr;
-    }
-}
-
-static String dashGateDiagnosticsJson(unsigned long now)
-{
-    bool ap = dashHandler ? (bool)dashHandler->APActive : false;
-    bool parked = dashHandler ? (bool)dashHandler->Parked : false;
-    bool summoning = dashHandler ? (bool)dashHandler->Summoning : false;
-    bool allowed = dashInjectionActive();
-    const char *reason = dashGateReason(apInjectionGate, allowed, ap, parked, summoning);
-    dashLogGateStateIfChanged(allowed, reason, ap, parked, summoning);
-
-    unsigned long apStableMs = (ap && dashApStableStartedMs > 0) ? now - dashApStableStartedMs : 0;
-    int dasStatus = dashHandler ? (int)dashHandler->dasAutopilotStatus : -1;
-
-    String j = "\"gate\":{\"enabled\":";
-    j += apInjectionGate ? "true" : "false";
-    j += ",\"apGateEnabled\":";
-    j += apInjectionGate ? "true" : "false";
-    j += ",\"canActive\":";
-    j += canActive ? "true" : "false";
-    j += ",\"allowed\":";
-    j += allowed ? "true" : "false";
-    j += ",\"injectionAllowed\":";
-    j += allowed ? "true" : "false";
-    j += ",\"reason\":\"";
-    j += reason;
-    j += "\",\"ap\":";
-    j += ap ? "true" : "false";
-    j += ",\"APActive\":";
-    j += ap ? "true" : "false";
-    j += ",\"parked\":";
-    j += parked ? "true" : "false";
-    j += ",\"Parked\":";
-    j += parked ? "true" : "false";
-    j += ",\"summoning\":";
-    j += summoning ? "true" : "false";
-    j += ",\"Summoning\":";
-    j += summoning ? "true" : "false";
-    j += ",\"apStableMs\":";
-    j += apStableMs;
-    j += ",\"last921AgeMs\":";
-    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last921Ms, now)) : String(-1);
-    j += ",\"last280AgeMs\":";
-    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last280Ms, now)) : String(-1);
-    j += ",\"last390AgeMs\":";
-    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last390Ms, now)) : String(-1);
-    j += ",\"last1016AgeMs\":";
-    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last1016Ms, now)) : String(-1);
-    j += ",\"last1021AgeMs\":";
-    j += dashHandler ? String(dashAgeMs((uint32_t)dashHandler->last1021Ms, now)) : String(-1);
-    j += ",\"dasAutopilotStatus\":";
-    j += dasStatus;
-    j += ",\"hardware\":";
-    j += hwMode;
-    j += ",\"hwMode\":";
-    j += hwMode;
-    j += ",\"plugins\":[";
-    bool firstPlugin = true;
-    for (uint8_t i = 0; i < pluginCount; i++)
-    {
-        if (!pluginStore[i].enabled)
-            continue;
-        if (!firstPlugin)
-            j += ",";
-        firstPlugin = false;
-        j += "{\"name\":\"";
-        j += jsonEscape(pluginStore[i].name);
-        j += "\",\"priority\":";
-        j += String((int)pluginStore[i].priority);
-        j += "}";
-    }
-    j += "]}";
-    return j;
-}
-
-static bool dashCheckNagDisabled()
-{
-    return false;
-}
-
 static bool dashStaSsidLooksCorrupt(const String &ssid)
 {
     return ssid.indexOf("\"ssid\"") >= 0 || ssid.indexOf("{\"") >= 0 ||
            ssid.indexOf("\",\"") >= 0;
 }
 
-static uint8_t dashClampHw3SlewRate(int rate)
-{
-    if (rate < kHw3SlewRateMin)
-        return kHw3SlewRateMin;
-    if (rate > kHw3SlewRateMax)
-        return kHw3SlewRateMax;
-    return static_cast<uint8_t>(rate);
-}
-
-static uint8_t dashLoadHw3SlewRate(uint8_t rate)
-{
-    if (rate < kHw3SlewRateMin || rate > kHw3SlewRateMax)
-        return kHw3SlewRateDefault;
-    return rate;
-}
-
-static uint8_t dashClampSpeedProfileForHw(uint8_t hw, int profile)
-{
-    int maxProfile = hw == 2 ? 4 : 2;
-    if (profile < 0)
-        return 0;
-    if (profile > maxProfile)
-        return static_cast<uint8_t>(maxProfile);
-    return static_cast<uint8_t>(profile);
-}
-
-static void dashApplySpeedProfileState()
-{
-    if (!dashHandler)
-        return;
-    dashHandler->speedProfileAuto = dashSpeedProfileAuto;
-    if (!dashSpeedProfileAuto)
-        dashHandler->speedProfile = dashClampSpeedProfileForHw(hwMode, dashManualSpeedProfile);
-}
-
-static bool dashReadHw3OffsetRaw(const CanFrame &frame, uint8_t &raw)
-{
-    if ((hwMode != 1 && hwMode != 2) || frame.id != 1021 || frame.dlc < 2 || readMuxID(frame) != 2)
-        return false;
-
-    raw = static_cast<uint8_t>(((frame.data[1] & 0x3F) << 2) | ((frame.data[0] >> 6) & 0x03));
-    return true;
-}
-
-static void dashWriteHw3OffsetRaw(CanFrame &frame, uint8_t raw)
-{
-    frame.data[0] = static_cast<uint8_t>((frame.data[0] & ~0xC0) | ((raw & 0x03) << 6));
-    frame.data[1] = static_cast<uint8_t>((frame.data[1] & ~0x3F) | (raw >> 2));
-}
-
-static bool dashApplyHw3OffsetSlew(CanFrame &modified, const CanFrame & /*original*/)
-{
-    uint8_t activeRaw = 0;
-    if (!dashReadHw3OffsetRaw(modified, activeRaw))
-        return false;
-
-    hw3OffsetTargetRaw = activeRaw;
-    uint8_t shapedRaw = activeRaw;
-    uint32_t now = millis();
-
-    if (hw3OffsetSlew)
-    {
-        uint8_t last = hw3OffsetLastRaw;
-        if (activeRaw < last && hw3OffsetLastSentMs != 0)
-        {
-            uint32_t rateRawPerSec = static_cast<uint32_t>(dashLoadHw3SlewRate(hw3SlewRate)) * 4;
-            uint32_t dt = now - hw3OffsetLastSentMs;
-            uint32_t maxDrop = (rateRawPerSec * dt + 500) / 1000;
-            uint8_t floorRaw = last > maxDrop ? static_cast<uint8_t>(last - maxDrop) : 0;
-            if (activeRaw < floorRaw)
-            {
-                shapedRaw = floorRaw;
-                hw3OffsetSlewCount++;
-            }
-        }
-    }
-
-    hw3OffsetLastRaw = shapedRaw;
-    hw3OffsetLastSentMs = now;
-    if (shapedRaw == activeRaw)
-        return false;
-
-    dashWriteHw3OffsetRaw(modified, shapedRaw);
-    return true;
-}
-
 static void dashApplyRuntimeState()
 {
-    bypassTlsscRequirementRuntime = false;
-    emergencyVehicleDetectionRuntime = false;
-    isaSpeedChimeSuppressRuntime = false;
-    enhancedAutopilotRuntime = false;
-    nagKillerRuntime = false;
-
-    if (dashHandler)
-    {
-        dashHandler->checkAD = dashCheckADEnabled;
-        dashHandler->checkNag = dashCheckNagDisabled;
-        dashApplySpeedProfileState();
-        if (!canActive)
-        {
-            dashHandler->ADEnabled = false;
-            dashHandler->APActive = false;
-        }
-    }
-
 #if defined(DASH_RGB_STATUS_LED)
     appRefreshStatusLed();
 #endif
@@ -740,36 +338,9 @@ static void dashSavePrefs()
     prefs.begin(PREFS_NS, false);
     prefs.putUChar("hw", hwMode);
     prefs.putUChar("hw_def", DASH_DEFAULT_HW);
-    prefs.putBool("can", canActive);
-    prefs.putBool("ap_gate", apInjectionGate);
-    prefs.putBool("sp_auto", dashSpeedProfileAuto);
-    prefs.putUChar("sp_sel", dashManualSpeedProfile);
     prefs.putBool("eprn", dashHandler ? (bool)dashHandler->enablePrint : true);
-    prefs.putUChar("plg_rep", pluginGetReplayCount());
-    prefs.putBool("h3_slw", hw3OffsetSlew);
-    prefs.putUChar("h3_srt", hw3SlewRate);
     prefs.putUChar("led_b", dashLedBrightness);
     prefs.end();
-}
-
-static void dashSetCanActive(bool active, const char *reason = nullptr)
-{
-    bool changed = canActive != active;
-    canActive = active;
-    dashApplyRuntimeState();
-    dashSavePrefs();
-    if (changed)
-    {
-        String msg = String("[CFG] Injection ") + (active ? "ON" : "OFF");
-        if (reason && *reason)
-            msg += String(" via ") + reason;
-        dashLog(msg);
-    }
-}
-
-[[maybe_unused]] static void dashToggleCanActive(const char *reason = nullptr)
-{
-    dashSetCanActive(!canActive, reason);
 }
 
 static bool dashApPasswordLengthValid(size_t len)
@@ -796,37 +367,9 @@ static bool dashStaConfigLengthValid(const String &ssid, const String &pass)
     return ssid.length() <= kDashMaxSsidLen && pass.length() <= kDashMaxPassLen;
 }
 
-static void dashClearLegacyOptionPrefs()
-{
-    static const char *const keys[] = {
-        "fAD",
-        "f_AD",
-        "f_nag",
-        "f_sum",
-        "f_isa",
-        "f_evd",
-        "f_h4o",
-        "sp",
-        "sp_lock",
-    };
-
-    bool removed = false;
-    for (const char *key : keys)
-    {
-        if (!prefs.isKey(key))
-            continue;
-        prefs.remove(key);
-        removed = true;
-    }
-
-    if (removed)
-        dashLog("[BOOT] Cleared legacy dashboard prefs from NVS");
-}
-
 static void dashLoadPrefs()
 {
     prefs.begin(PREFS_NS, false);
-    dashClearLegacyOptionPrefs();
     bool hasStoredHw = prefs.isKey("hw");
     uint8_t storedHw = prefs.getUChar("hw", DASH_DEFAULT_HW);
     uint8_t storedDefaultHw = prefs.getUChar("hw_def", kDashUnsetU8);
@@ -847,13 +390,6 @@ static void dashLoadPrefs()
         prefs.putUChar("hw", hwMode);
     if (storedDefaultHw != DASH_DEFAULT_HW)
         prefs.putUChar("hw_def", DASH_DEFAULT_HW);
-    canActive = prefs.getBool("can", kDashInjectionDefaultEnabled);
-    apInjectionGate = prefs.getBool("ap_gate", kDashApGateDefaultEnabled);
-    dashSpeedProfileAuto = prefs.getBool("sp_auto", true);
-    dashManualSpeedProfile = dashClampSpeedProfileForHw(hwMode, prefs.getUChar("sp_sel", 1));
-    pluginSetReplayCount(prefs.getUChar("plg_rep", PLUGIN_REPLAY_COUNT));
-    hw3OffsetSlew = prefs.getBool("h3_slw", false);
-    hw3SlewRate = dashLoadHw3SlewRate(prefs.getUChar("h3_srt", kHw3SlewRateDefault));
     dashLedBrightness = prefs.getUChar("led_b", kDashLedBrightnessDefault);
     bool ep = prefs.getBool("eprn", true);
 
@@ -993,110 +529,8 @@ static void dashLoadPrefs()
 
     if (migratedHw)
         dashLog("[BOOT] HW default synced to " + String(hwMode == 0 ? "LEGACY" : hwMode == 1 ? "HW3"
-                                                                                             : "HW4"));
+                                                                                              : "HW4"));
     dashLog("[BOOT] Prefs loaded HW=" + String(hwMode));
-    dashLog("[BOOT] canActive=" + String(canActive ? "YES" : "NO"));
-    dashLog("[BOOT] pluginReplay=" + String(pluginGetReplayCount()));
-}
-
-static uint32_t dashPluginStateHash(const char *value)
-{
-    uint32_t hash = 2166136261u;
-    while (*value)
-    {
-        hash ^= (uint8_t)*value++;
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
-static void dashPluginStateKey(const char *filename, char *key, size_t keySize)
-{
-    snprintf(key, keySize, "plg_%08lx", (unsigned long)dashPluginStateHash(filename));
-}
-
-static void dashPluginOrderKey(const char *filename, char *key, size_t keySize)
-{
-    snprintf(key, keySize, "plo_%08lx", (unsigned long)dashPluginStateHash(filename));
-}
-
-static void dashSaveAllPluginStates()
-{
-    Preferences pluginPrefs;
-    if (!pluginPrefs.begin(PREFS_NS, false))
-        return;
-
-    for (uint8_t i = 0; i < pluginCount; i++)
-    {
-        char key[13];
-        dashPluginStateKey(pluginStore[i].filename, key, sizeof(key));
-        pluginPrefs.putBool(key, pluginStore[i].enabled);
-        dashPluginOrderKey(pluginStore[i].filename, key, sizeof(key));
-        pluginPrefs.putUChar(key, i);
-    }
-    pluginPrefs.end();
-}
-
-static void dashClearPluginState(const PluginData &plugin)
-{
-    Preferences pluginPrefs;
-    if (!pluginPrefs.begin(PREFS_NS, false))
-        return;
-
-    char key[13];
-    dashPluginStateKey(plugin.filename, key, sizeof(key));
-    pluginPrefs.remove(key);
-    dashPluginOrderKey(plugin.filename, key, sizeof(key));
-    pluginPrefs.remove(key);
-    pluginPrefs.end();
-}
-
-static void dashRestorePluginStates()
-{
-    Preferences pluginPrefs;
-    if (!pluginPrefs.begin(PREFS_NS, false))
-        return;
-
-    bool missingOrder = false;
-    for (uint8_t i = 0; i < pluginCount; i++)
-    {
-        char key[13];
-        dashPluginStateKey(pluginStore[i].filename, key, sizeof(key));
-        pluginStore[i].enabled = pluginPrefs.getBool(key, pluginStore[i].enabled);
-
-        dashPluginOrderKey(pluginStore[i].filename, key, sizeof(key));
-        if (pluginPrefs.isKey(key))
-            pluginStore[i].priority = pluginPrefs.getUChar(key, i);
-        else
-        {
-            pluginStore[i].priority = i;
-            missingOrder = true;
-        }
-    }
-    pluginPrefs.end();
-
-    pluginSortByPriority();
-    if (missingOrder)
-        dashSaveAllPluginStates();
-}
-
-static void dashSchedulePluginStateSave(unsigned long delayMs)
-{
-    pluginStatesDirty = true;
-    pluginStatesFlushAt = millis() + delayMs;
-}
-
-static void dashFlushPluginStatesIfDue()
-{
-    if (!pluginStatesDirty)
-        return;
-
-    unsigned long now = millis();
-    if ((long)(now - pluginStatesFlushAt) < 0)
-        return;
-
-    dashSaveAllPluginStates();
-    pluginStatesDirty = false;
 }
 
 // 仅MCP2515：在硬件模式切换时重新加载精细过滤器寄存器。
@@ -1142,7 +576,7 @@ static void dashApplyFilters()
     }
     dashMcp->setNormalMode();
     dashLog("[CFG] Filters set for " + String(hwMode == 0 ? "LEGACY" : hwMode == 1 ? "HW3"
-                                                                                   : "HW4"));
+                                                                                    : "HW4"));
 #endif
 }
 
@@ -1203,51 +637,16 @@ static void handleStatus()
         fpsLastMs = now;
     }
 
-    bool ADActive = dashHandler ? (bool)dashHandler->APActive : false;
-    int sp = dashHandler ? (int)dashHandler->speedProfile : 0;
-    bool spAuto = dashHandler ? (bool)dashHandler->speedProfileAuto : true;
-    int soff = dashHandler ? (int)dashHandler->speedOffset : 0;
-    int gtwAp = dashHandler ? (int)dashHandler->gatewayAutopilot : -1;
     bool ep = dashHandler ? (bool)dashHandler->enablePrint : true;
 
     String j = "{\"hw\":";
     j += hwMode;
-    j += ",\"sp\":";
-    j += sp;
-    j += ",\"spAuto\":";
-    j += spAuto ? "true" : "false";
-    j += ",\"soff\":";
-    j += soff;
-    j += ",\"gtwap\":";
-    j += gtwAp;
-    j += ",\"AD\":";
-    j += ADActive ? "true" : "false";
     j += ",\"eprn\":";
     j += ep ? "true" : "false";
-    j += ",\"plgr\":";
-    j += pluginGetReplayCount();
-    j += ",\"plgrmax\":";
-    j += PLUGIN_REPLAY_COUNT_MAX;
-    j += ",\"apGate\":";
-    j += apInjectionGate ? "true" : "false";
-    j += ",\"ia\":";
-    j += dashInjectionActive() ? "true" : "false";
-    j += ",\"hw3OffsetSlew\":";
-    j += hw3OffsetSlew ? "true" : "false";
-    j += ",\"hw3SlewRate\":";
-    j += hw3SlewRate;
-    j += ",\"hw3OffsetTarget\":";
-    j += hw3OffsetTargetRaw;
-    j += ",\"hw3OffsetLast\":";
-    j += hw3OffsetLastRaw;
-    j += ",\"hw3SlewCount\":";
-    j += hw3OffsetSlewCount;
     j += ",\"ledB\":";
     j += dashLedBrightness;
     j += ",\"can\":";
     j += canOnline ? "true" : "false";
-    j += ",\"ci\":";
-    j += canActive ? "true" : "false";
     j += ",\"rx\":";
     j += rxCount;
     j += ",\"tx\":";
@@ -1267,41 +666,7 @@ static void handleStatus()
     j += mcpEflg;
     j += ",\"up\":";
     j += (millis() - startMs) / 1000;
-    j += ",";
-    j += dashGateDiagnosticsJson(now);
-    j += ",\"probe\":{\"active\":";
-    j += dashWriteProbe.active ? "true" : "false";
-    j += ",\"state\":";
-    j += dashWriteProbe.state;
-    j += ",\"id\":";
-    j += dashWriteProbe.id;
-    j += ",\"mux\":";
-    j += dashWriteProbe.mux;
-    j += ",\"txa\":";
-    j += dashWriteProbe.active ? String(now - dashWriteProbe.txMs) : String(0);
-    j += ",\"rxa\":";
-    j += dashWriteProbe.hasRx ? String(now - dashWriteProbe.rxMs) : String(0);
-    j += ",\"txdlc\":";
-    j += dashWriteProbe.txDlc;
-    j += ",\"rxdlc\":";
-    j += dashWriteProbe.rxDlc;
-    j += ",\"hasrx\":";
-    j += dashWriteProbe.hasRx ? "true" : "false";
-    j += ",\"tx\":[";
-    for (uint8_t i = 0; i < dashWriteProbe.txDlc; i++)
-    {
-        if (i)
-            j += ",";
-        j += String(dashWriteProbe.txData[i]);
-    }
-    j += "],\"rx\":[";
-    for (uint8_t i = 0; i < dashWriteProbe.rxDlc; i++)
-    {
-        if (i)
-            j += ",";
-        j += String(dashWriteProbe.rxData[i]);
-    }
-    j += "]},\"mux\":[";
+    j += ",\"mux\":[";
     for (int i = 0; i < 3; i++)
     {
         if (i)
@@ -1325,60 +690,7 @@ static void handleConfig()
             hwMode = v;
             hwChanged = true;
             dashLog("[CFG] HW=" + String(v == 0 ? "LEGACY" : v == 1 ? "HW3"
-                                                                    : "HW4"));
-        }
-    }
-    if (server.hasArg("can"))
-        canActive = server.arg("can") == "1";
-    bool profileAutoRequested = server.hasArg("spa") && server.arg("spa") == "1";
-    if (server.hasArg("sp"))
-    {
-        uint8_t v = dashClampSpeedProfileForHw(hwMode, server.arg("sp").toInt());
-        if (!profileAutoRequested && (v != dashManualSpeedProfile || dashSpeedProfileAuto))
-            dashLog("[CFG] Speed profile manual " + String(v));
-        dashManualSpeedProfile = v;
-        if (!profileAutoRequested)
-            dashSpeedProfileAuto = false;
-    }
-    if (server.hasArg("spa"))
-    {
-        bool v = server.arg("spa") == "1";
-        if (v != dashSpeedProfileAuto)
-            dashLog("[CFG] Speed profile " + String(v ? "AUTO" : "MANUAL"));
-        dashSpeedProfileAuto = v;
-    }
-    if (server.hasArg("apg"))
-    {
-        bool v = server.arg("apg") == "1";
-        if (v != apInjectionGate)
-        {
-            apInjectionGate = v;
-            dashLog("[CFG] AP injection gate " + String(v ? "ON" : "OFF"));
-        }
-    }
-    if (server.hasArg("plgr"))
-    {
-        uint8_t previous = pluginGetReplayCount();
-        pluginSetReplayCount(server.arg("plgr").toInt());
-        if (pluginGetReplayCount() != previous)
-            dashLog("[CFG] Plugin replay x" + String(pluginGetReplayCount()));
-    }
-    if (server.hasArg("hw3OffsetSlew") || server.hasArg("offsetSlew"))
-    {
-        bool v = server.arg(server.hasArg("hw3OffsetSlew") ? "hw3OffsetSlew" : "offsetSlew") == "1";
-        if (v != hw3OffsetSlew)
-        {
-            hw3OffsetSlew = v;
-            dashLog("[CFG] Offset slew " + String(v ? "ON" : "OFF"));
-        }
-    }
-    if (server.hasArg("hw3SlewRate") || server.hasArg("offsetSlewRate"))
-    {
-        uint8_t v = dashClampHw3SlewRate(server.arg(server.hasArg("hw3SlewRate") ? "hw3SlewRate" : "offsetSlewRate").toInt());
-        if (v != hw3SlewRate)
-        {
-            hw3SlewRate = v;
-            dashLog("[CFG] Offset slew rate " + String(hw3SlewRate) + "%/s");
+                                                                     : "HW4"));
         }
     }
     if (hwChanged)
@@ -1489,7 +801,6 @@ static void handleResetStats()
     memset(muxRx, 0, sizeof(muxRx));
     memset(muxTx, 0, sizeof(muxTx));
     memset(muxErr, 0, sizeof(muxErr));
-    dashResetWriteProbe();
     dashLog("[CFG] Stats reset");
     server.send(200, "application/json", "{\"ok\":true}");
 }
@@ -1563,12 +874,6 @@ static void handleRecDownload()
     f.close();
 }
 
-static void handleDisable()
-{
-    dashSetCanActive(false, "dashboard");
-    server.send(200, "text/plain", "Injection stopped.");
-}
-
 static void handleReboot()
 {
     server.send(200, "text/plain", "Rebooting...");
@@ -1624,536 +929,7 @@ static void handleOtaUpload()
     }
 }
 
-// ── 插件管理 ───────────────────────────────────────────
 
-static void dashReapplyFiltersWithPlugins()
-{
-    if (!dashHandler || !dashDriver)
-        return;
-    // 合并处理器 + 插件过滤器ID
-    uint32_t mergedIds[32];
-    uint8_t count = 0;
-    const uint32_t *hIds = dashHandler->filterIds();
-    uint8_t hCount = dashHandler->filterIdCount();
-    for (uint8_t i = 0; i < hCount && count < 32; i++)
-        mergedIds[count++] = hIds[i];
-    count += pluginGetFilterIds(mergedIds + count, 32 - count);
-    if (pluginTestState.active && pluginTestState.waitingForFrame && count < 32)
-    {
-        bool found = false;
-        for (uint8_t i = 0; i < count; i++)
-        {
-            if (mergedIds[i] == pluginTestState.rule.canId)
-            {
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-            mergedIds[count++] = pluginTestState.rule.canId;
-    }
-    dashDriver->setFilters(mergedIds, count);
-}
-
-static const char *pluginOpName(PluginOpType t)
-{
-    switch (t)
-    {
-    case OP_SET_BIT:
-        return "set_bit";
-    case OP_SET_BYTE:
-        return "set_byte";
-    case OP_OR_BYTE:
-        return "or_byte";
-    case OP_AND_BYTE:
-        return "and_byte";
-    case OP_CHECKSUM:
-        return "checksum";
-    case OP_COUNTER:
-        return "counter";
-    case OP_EMIT_PERIODIC:
-        return "emit_periodic";
-    default:
-        return "?";
-    }
-}
-
-static String dashFrameDataJson(const CanFrame &frame)
-{
-    String j = "[";
-    for (uint8_t i = 0; i < 8; i++)
-    {
-        if (i)
-            j += ",";
-        j += String(frame.data[i]);
-    }
-    j += "]";
-    return j;
-}
-
-static String dashFrameDataHex(const CanFrame &frame)
-{
-    String out;
-    for (uint8_t i = 0; i < 8; i++)
-    {
-        if (i)
-            out += " ";
-        if (frame.data[i] < 16)
-            out += "0";
-        out += String(frame.data[i], HEX);
-    }
-    out.toUpperCase();
-    return out;
-}
-
-static String dashDiagBytesHex(const uint8_t *bytes)
-{
-    String out;
-    for (uint8_t i = 0; i < 8; i++)
-    {
-        if (i)
-            out += " ";
-        if (bytes[i] < 16)
-            out += "0";
-        out += String(bytes[i], HEX);
-    }
-    out.toUpperCase();
-    return out;
-}
-
-static String dashPluginTestStatusJson()
-{
-    uint16_t remaining = pluginTestState.sent < pluginTestState.total
-                             ? (pluginTestState.total - pluginTestState.sent)
-                             : 0;
-    String j = "{\"ok\":true,\"active\":";
-    j += pluginTestState.active ? "true" : "false";
-    j += ",\"sent\":" + String(pluginTestState.sent);
-    j += ",\"total\":" + String(pluginTestState.total);
-    j += ",\"remaining\":" + String(remaining);
-    j += ",\"interval\":" + String(pluginTestState.intervalMs);
-    j += ",\"id\":" + String(pluginTestState.frame.id);
-    j += ",\"targetId\":" + String(pluginTestState.rule.canId);
-    j += ",\"waiting\":" + String(pluginTestState.waitingForFrame ? "true" : "false");
-    j += ",\"data\":" + dashFrameDataJson(pluginTestState.frame);
-    j += "}";
-    return j;
-}
-
-static bool dashPluginTestRuleMatches(const PluginRule &rule, const CanFrame &frame)
-{
-    if (rule.canId != frame.id)
-        return false;
-    return pluginRuleMatchesBus(rule, frame) && pluginRuleMatchesMux(rule, frame) &&
-           pluginRuleMatchesByte(rule, frame);
-}
-
-static bool dashBuildPluginTestFrame(const PluginRule &rule, const CanFrame &base, CanFrame &frame, String &error)
-{
-    if (!dashPluginTestRuleMatches(rule, base))
-    {
-        error = "base frame does not match rule";
-        return false;
-    }
-
-    frame = base;
-    for (uint8_t o = 0; o < rule.opCount; o++)
-        pluginApplyOp(frame, rule.ops[o]);
-
-    return true;
-}
-
-static void handlePluginList()
-{
-    String j = "{\"maxPlugins\":" + String(PLUGIN_MAX) + ",\"plugins\":[";
-    for (uint8_t i = 0; i < pluginCount; i++)
-    {
-        if (i)
-            j += ",";
-        j += "{\"name\":\"" + jsonEscape(pluginStore[i].name) + "\"";
-        j += ",\"version\":\"" + jsonEscape(pluginStore[i].version) + "\"";
-        j += ",\"author\":\"" + jsonEscape(pluginStore[i].author) + "\"";
-        j += ",\"rules\":" + String(pluginStore[i].ruleCount);
-        j += ",\"priority\":" + String(i + 1);
-        j += ",\"enabled\":" + String(pluginStore[i].enabled ? "true" : "false");
-
-        // 规则详情
-        j += ",\"details\":[";
-        for (uint8_t r = 0; r < pluginStore[i].ruleCount; r++)
-        {
-            const PluginRule &rule = pluginStore[i].rules[r];
-            if (r)
-                j += ",";
-            j += "{\"id\":" + String(rule.canId);
-            j += ",\"hex\":\"0x" + String(rule.canId, HEX) + "\"";
-            j += ",\"mux\":" + String(rule.mux);
-            j += ",\"mux_mask\":" + String(rule.muxMask);
-            j += ",\"bus\":" + String(rule.busMask);
-            j += ",\"match_byte\":" + String(rule.matchByte);
-            j += ",\"match_mask\":" + String(rule.matchMask);
-            j += ",\"match_val\":" + String(rule.matchValue);
-            j += ",\"send\":" + String(rule.sendAfter ? "true" : "false");
-            j += ",\"diag\":{\"match_count\":" + String(rule.diag.matchCount);
-            j += ",\"changed_count\":" + String(rule.diag.changedCount);
-            j += ",\"send_ok_count\":" + String(rule.diag.sendOkCount);
-            j += ",\"send_fail_count\":" + String(rule.diag.sendFailCount);
-            j += ",\"last_match_ms\":" + String(rule.diag.lastMatchMs);
-            j += ",\"last_send_ms\":" + String(rule.diag.lastSendMs);
-            j += ",\"last_original\":\"" + dashDiagBytesHex(rule.diag.lastOriginal) + "\"";
-            j += ",\"last_modified\":\"" + dashDiagBytesHex(rule.diag.lastModified) + "\"}";
-            j += ",\"ops\":[";
-            for (uint8_t o = 0; o < rule.opCount; o++)
-            {
-                const PluginOp &op = rule.ops[o];
-                if (o)
-                    j += ",";
-                j += "{\"type\":\"" + String(pluginOpName(op.type)) + "\"";
-                if (op.type == OP_SET_BIT)
-                    j += ",\"bit\":" + String(op.index) + ",\"val\":" + String(op.value);
-                else if (op.type == OP_CHECKSUM)
-                    j += "";
-                else if (op.type == OP_COUNTER)
-                {
-                    j += ",\"byte\":" + String(op.index);
-                    j += ",\"mask\":" + String(op.mask);
-                    j += ",\"step\":" + String(op.value);
-                }
-                else if (op.type == OP_EMIT_PERIODIC)
-                {
-                    j += ",\"interval\":" + String(op.intervalMs);
-                    j += ",\"gtw_silent\":" + String(op.gtwSilent ? "true" : "false");
-                }
-                else
-                {
-                    j += ",\"byte\":" + String(op.index) + ",\"val\":" + String(op.value);
-                    if (op.type == OP_SET_BYTE)
-                        j += ",\"mask\":" + String(op.mask);
-                }
-                j += "}";
-            }
-            j += "]}";
-        }
-        j += "]}";
-    }
-    j += "],\"gtw_silent_supported\":" + String(pluginGtwSilentSupported() ? "true" : "false");
-    j += ",\"gtw_uds\":{\"state\":" + String((int)pluginPeriodicEmit.uds.state);
-    j += ",\"last_nrc\":" + String(pluginPeriodicEmit.uds.lastNrc);
-    auto hexBuf = [](const uint8_t *b, uint8_t len) -> String
-    {
-        String s = "\"";
-        for (uint8_t i = 0; i < len; i++)
-        {
-            if (b[i] < 0x10)
-                s += "0";
-            s += String(b[i], HEX);
-        }
-        s += "\"";
-        return s;
-    };
-    j += ",\"last_seed\":" + hexBuf(pluginPeriodicEmit.uds.lastSeed, pluginPeriodicEmit.uds.lastSeedLen);
-    j += ",\"last_key\":" + hexBuf(pluginPeriodicEmit.uds.lastKey, pluginPeriodicEmit.uds.lastKeyLen);
-    j += "}";
-    j += ",\"wifi\":{\"connected\":";
-    j += staConnected ? "true" : "false";
-    j += ",\"ssid\":\"" + jsonEscape(staSSID) + "\"";
-    if (staConnected)
-        j += ",\"ip\":\"" + WiFi.localIP().toString() + "\"";
-    j += "}}";
-    server.send(200, "application/json", j);
-}
-
-static bool pluginInstallJson(const String &json, const String &url)
-{
-    PluginData temp;
-    if (!pluginParseJson(json, temp))
-        return false;
-
-    // 检查重复名称
-    int existing = pluginFindByName(temp.name);
-    if (existing < 0 && pluginCount >= PLUGIN_MAX)
-        return false;
-
-    uint8_t insertIndex = pluginCount;
-    String oldFilename;
-    if (existing >= 0)
-    {
-        insertIndex = (uint8_t)existing;
-        oldFilename = pluginStore[existing].filename;
-    }
-
-    // 保持路径在SPIFFS 31字符对象名称限制内： "/p_" + base + ".json"。
-    String fname = String(temp.name);
-    fname.replace(" ", "_");
-    fname.toLowerCase();
-    const size_t maxSpiffsPathLen = 31;
-    const size_t prefixLen = 3; // 前缀长度
-    const size_t suffixLen = 5; // 后缀长度
-    const size_t maxBaseLen = maxSpiffsPathLen - prefixLen - suffixLen;
-    if (fname.length() > maxBaseLen)
-        fname = fname.substring(0, maxBaseLen);
-    fname += ".json";
-    strlcpy(temp.filename, fname.c_str(), sizeof(temp.filename));
-    strlcpy(temp.sourceUrl, url.c_str(), sizeof(temp.sourceUrl));
-    temp.enabled = false;
-    temp.priority = insertIndex;
-
-    if (!pluginSaveToSpiffs(json, temp.filename))
-        return false;
-
-    if (existing >= 0)
-    {
-        if (oldFilename.length() > 0 && oldFilename != temp.filename)
-            SPIFFS.remove(pluginFilePath(oldFilename.c_str()));
-        pluginsLocked = true;
-        pluginStore[insertIndex] = temp;
-        pluginNormalizePriorities();
-        pluginResetDiagnostics();
-        pluginsLocked = false;
-    }
-    else if (!pluginInsert(pluginCount, temp))
-    {
-        SPIFFS.remove(pluginFilePath(temp.filename));
-        return false;
-    }
-
-    dashSaveAllPluginStates();
-    pluginResetDiagnostics();
-    pluginResetPeriodicEmit();
-
-    dashReapplyFiltersWithPlugins();
-    dashLog("[PLG] Installed: " + String(temp.name) + " (" + String(temp.ruleCount) + " rules)");
-    return true;
-}
-
-static void handlePluginUpload()
-{
-    String json = server.arg("plain");
-    if (json.length() == 0)
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"empty body\"}");
-        return;
-    }
-    if (pluginInstallJson(json, ""))
-        server.send(200, "application/json", "{\"ok\":true}");
-    else
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid plugin JSON or max " + String(PLUGIN_MAX) + " plugins reached\"}");
-}
-
-static void handlePluginInstallFromUrl()
-{
-    String url = server.arg("url");
-    if (url.length() == 0)
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"no url\"}");
-        return;
-    }
-    if (!staConnected)
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"WiFi not connected. Configure WiFi first.\"}");
-        return;
-    }
-
-    HTTPClient http;
-    WiFiClientSecure client;
-    client.setInsecure(); // 为简化跳过证书验证
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.setTimeout(15000);
-    http.begin(client, url);
-    int code = http.GET();
-    if (code != HTTP_CODE_OK)
-    {
-        String err = "HTTP " + String(code);
-        http.end();
-        dashLog("[PLG] Download failed: " + err);
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"" + err + "\"}");
-        return;
-    }
-    String json = http.getString();
-    http.end();
-
-    if (pluginInstallJson(json, url))
-        server.send(200, "application/json", "{\"ok\":true}");
-    else
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid plugin JSON or max " + String(PLUGIN_MAX) + " plugins reached\"}");
-}
-
-static void handlePluginToggle()
-{
-    if (!server.hasArg("idx"))
-    {
-        server.send(400, "application/json", "{\"ok\":false}");
-        return;
-    }
-    uint8_t idx = server.arg("idx").toInt();
-    if (idx < pluginCount)
-    {
-        pluginStore[idx].enabled = !pluginStore[idx].enabled;
-        pluginResetDiagnostics();
-        pluginResetPeriodicEmit();
-        dashSchedulePluginStateSave();
-        dashReapplyFiltersWithPlugins();
-        dashLog("[PLG] " + String(pluginStore[idx].name) + " " +
-                String(pluginStore[idx].enabled ? "enabled" : "disabled"));
-        server.send(200, "application/json",
-                    String("{\"ok\":true,\"enabled\":") +
-                        (pluginStore[idx].enabled ? "true" : "false") + "}");
-        return;
-    }
-    server.send(200, "application/json", "{\"ok\":false}");
-}
-
-static void handlePluginRemove()
-{
-    if (!server.hasArg("idx"))
-    {
-        server.send(400, "application/json", "{\"ok\":false}");
-        return;
-    }
-    uint8_t idx = server.arg("idx").toInt();
-    if (idx < pluginCount)
-    {
-        String name = pluginStore[idx].name;
-        dashClearPluginState(pluginStore[idx]);
-        pluginRemove(idx);
-        pluginResetPeriodicEmit();
-        dashSaveAllPluginStates();
-        dashReapplyFiltersWithPlugins();
-        dashLog("[PLG] Removed: " + name);
-    }
-    server.send(200, "application/json", "{\"ok\":true}");
-}
-
-static void handlePluginPriority()
-{
-    if (!server.hasArg("idx") || !server.hasArg("priority"))
-    {
-        server.send(400, "application/json", "{\"ok\":false}");
-        return;
-    }
-
-    int idx = server.arg("idx").toInt();
-    int priority = server.arg("priority").toInt();
-    if (idx < 0 || idx >= pluginCount || priority < 0 || priority >= pluginCount)
-    {
-        server.send(400, "application/json", "{\"ok\":false}");
-        return;
-    }
-
-    if (pluginMove((uint8_t)idx, (uint8_t)priority))
-    {
-        pluginResetPeriodicEmit();
-        dashSaveAllPluginStates();
-        dashReapplyFiltersWithPlugins();
-        dashLog("[PLG] Priority: " + String(pluginStore[priority].name) + " #" + String(priority + 1));
-        server.send(200, "application/json", "{\"ok\":true}");
-        return;
-    }
-
-    server.send(400, "application/json", "{\"ok\":false}");
-}
-
-static void handlePluginTest()
-{
-    if (!dashDriver)
-    {
-        server.send(500, "application/json", "{\"ok\":false,\"error\":\"CAN driver unavailable\"}");
-        return;
-    }
-    if (!canActive)
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"Injection disabled. Press Resume Injection first.\"}");
-        return;
-    }
-
-    String payload = server.arg("plain");
-    if (payload.length() == 0)
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"empty body\"}");
-        return;
-    }
-
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, payload);
-    if (err)
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid JSON\"}");
-        return;
-    }
-
-    JsonVariantConst pluginDoc = doc["plugin"];
-    if (pluginDoc.isNull())
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing plugin\"}");
-        return;
-    }
-
-    String pluginJson;
-    serializeJson(pluginDoc, pluginJson);
-
-    PluginData temp;
-    if (!pluginParseJson(pluginJson, temp))
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid plugin JSON\"}");
-        return;
-    }
-
-    int ruleIndex = doc["rule"] | -1;
-    if (ruleIndex < 0 || ruleIndex >= temp.ruleCount)
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid rule index\"}");
-        return;
-    }
-
-    int count = doc["count"] | 1;
-    int intervalMs = doc["interval"] | 100;
-    if (count < 1 || count > 200)
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"count must be 1-200\"}");
-        return;
-    }
-    if (intervalMs < 10 || intervalMs > 5000)
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"interval must be 10-5000 ms\"}");
-        return;
-    }
-
-    if (pluginTestState.active)
-        dashLog("[PLGTEST] Replaced previous test");
-
-    const PluginRule &rule = temp.rules[ruleIndex];
-    pluginTestState.active = false;
-    pluginTestState.waitingForFrame = true;
-    pluginTestState.rule = rule;
-    pluginTestState.frame = {};
-    pluginTestState.frame.id = rule.canId;
-    pluginTestState.frame.dlc = 8;
-    pluginTestState.total = (uint16_t)count;
-    pluginTestState.sent = 0;
-    pluginTestState.intervalMs = (uint16_t)intervalMs;
-    pluginTestState.nextSendAt = 0;
-    pluginTestState.active = true;
-    dashReapplyFiltersWithPlugins();
-
-    dashLog("[PLGTEST] Waiting for CAN 0x" + String(rule.canId, HEX) + " x" + String(count) +
-            " @ " + String(intervalMs) + "ms");
-    server.send(200, "application/json", dashPluginTestStatusJson());
-}
-
-static void handlePluginTestStatus()
-{
-    server.send(200, "application/json", dashPluginTestStatusJson());
-}
-
-static void handlePluginTestStop()
-{
-    bool wasActive = pluginTestState.active;
-    pluginTestState.active = false;
-    pluginTestState.waitingForFrame = false;
-    dashReapplyFiltersWithPlugins();
-    if (wasActive)
-        dashLog("[PLGTEST] Stopped after " + String(pluginTestState.sent) + "/" + String(pluginTestState.total) + " sends");
-    server.send(200, "application/json", dashPluginTestStatusJson());
-}
 
 // ── WiFi STA ────────────────────────────────────────────────────
 
@@ -2642,9 +1418,7 @@ static void handleSettingsExport()
     Preferences p;
     String apSsid = "", apPass = "", wSsid = "", wPass = "";
     String wIp = "", wGw = "", wMask = "", wDns = "";
-    bool wStatic = false, beta = false, apHid = false, startAfterAp = false;
-    bool h3Slew = false;
-    uint8_t h3SlewRate = kHw3SlewRateDefault;
+    bool wStatic = false, beta = false, apHid = false;
     int canTx = -1, canRx = -1;
 
     if (p.begin(PREFS_NS, false))
@@ -2668,9 +1442,6 @@ static void handleSettingsExport()
         if (p.isKey("wifi_dns"))
             wDns = p.getString("wifi_dns", "");
         beta = p.getBool("upd_beta", false);
-        startAfterAp = p.getBool("ap_gate", kDashApGateDefaultEnabled);
-        h3Slew = p.getBool("h3_slw", false);
-        h3SlewRate = dashLoadHw3SlewRate(p.getUChar("h3_srt", kHw3SlewRateDefault));
         p.end();
     }
     Preferences cp;
@@ -2687,9 +1458,6 @@ static void handleSettingsExport()
     j += ",\"static\":" + String(wStatic ? "true" : "false");
     j += ",\"ip\":\"" + jsonEscape(wIp) + "\",\"gw\":\"" + jsonEscape(wGw) + "\"";
     j += ",\"mask\":\"" + jsonEscape(wMask) + "\",\"dns\":\"" + jsonEscape(wDns) + "\"}";
-    j += ",\"plugins\":{\"replay\":" + String(pluginGetReplayCount()) +
-         ",\"startAfterAp\":" + String(startAfterAp ? "true" : "false") + "}";
-    j += ",\"hw3\":{\"offsetSlew\":" + String(h3Slew ? "true" : "false") + ",\"slewRate\":" + String(h3SlewRate) + "}";
     j += ",\"can\":{\"tx\":" + String(canTx) + ",\"rx\":" + String(canRx) + "}";
     j += ",\"beta\":" + String(beta ? "true" : "false");
     j += "}";
@@ -2752,17 +1520,6 @@ static void handleSettingsImport()
     }
     if (doc["beta"].is<bool>())
         p.putBool("upd_beta", doc["beta"].as<bool>());
-    if (doc["plugins"].is<JsonObject>() && doc["plugins"]["replay"].is<int>())
-        p.putUChar("plg_rep", pluginClampReplayCount(doc["plugins"]["replay"].as<int>()));
-    if (doc["plugins"].is<JsonObject>() && doc["plugins"]["startAfterAp"].is<bool>())
-        p.putBool("ap_gate", doc["plugins"]["startAfterAp"].as<bool>());
-    if (doc["hw3"].is<JsonObject>())
-    {
-        if (doc["hw3"]["offsetSlew"].is<bool>())
-            p.putBool("h3_slw", doc["hw3"]["offsetSlew"].as<bool>());
-        if (doc["hw3"]["slewRate"].is<int>())
-            p.putUChar("h3_srt", dashClampHw3SlewRate(doc["hw3"]["slewRate"].as<int>()));
-    }
     p.end();
 
     if (doc["can"].is<JsonObject>())
@@ -3279,89 +2036,6 @@ static void handleUpdateBeta()
     server.send(200, "application/json", j);
 }
 
-// ── 插件帧回调包装器 ───────────────────────────────
-
-static void dashPluginTestCapture(const CanFrame &frame)
-{
-    if (!pluginTestState.active || !pluginTestState.waitingForFrame)
-        return;
-    if (!dashPluginTestRuleMatches(pluginTestState.rule, frame))
-        return;
-
-    CanFrame testFrame;
-    String buildError;
-    if (!dashBuildPluginTestFrame(pluginTestState.rule, frame, testFrame, buildError))
-    {
-        pluginTestState.active = false;
-        pluginTestState.waitingForFrame = false;
-        dashReapplyFiltersWithPlugins();
-        dashLog("[PLGTEST] Stopped: " + buildError);
-        return;
-    }
-
-    pluginTestState.frame = testFrame;
-    pluginTestState.sent = 0;
-    pluginTestState.nextSendAt = millis();
-    pluginTestState.waitingForFrame = false;
-    dashReapplyFiltersWithPlugins();
-    dashLog("[PLGTEST] Captured CAN 0x" + String(testFrame.id, HEX) +
-            " [" + dashFrameDataHex(testFrame) + "]");
-}
-
-static void dashPluginProcess(const CanFrame &frame, CanDriver &driver)
-{
-    if (!dashInjectionActive())
-        return;
-    dashPluginTestCapture(frame);
-    pluginProcessFrame(frame, driver);
-}
-
-static void dashPluginTestTick()
-{
-    if (!pluginTestState.active)
-        return;
-    if (!canActive)
-    {
-        pluginTestState.active = false;
-        pluginTestState.waitingForFrame = false;
-        dashReapplyFiltersWithPlugins();
-        dashLog("[PLGTEST] Stopped: injection disabled");
-        return;
-    }
-    if (!dashApInjectionAllowed())
-        return;
-    if (!dashDriver)
-    {
-        pluginTestState.active = false;
-        pluginTestState.waitingForFrame = false;
-        dashReapplyFiltersWithPlugins();
-        dashLog("[PLGTEST] Stopped: CAN driver unavailable");
-        return;
-    }
-    if (pluginTestState.waitingForFrame)
-        return;
-
-    unsigned long now = millis();
-    if ((long)(now - pluginTestState.nextSendAt) < 0)
-        return;
-
-    dashDriver->send(pluginTestState.frame);
-    pluginTestState.sent++;
-
-    if (pluginTestState.sent >= pluginTestState.total)
-    {
-        pluginTestState.active = false;
-        pluginTestState.waitingForFrame = false;
-        dashReapplyFiltersWithPlugins();
-        dashLog("[PLGTEST] Done CAN 0x" + String(pluginTestState.frame.id, HEX) +
-                " x" + String(pluginTestState.total));
-        return;
-    }
-
-    pluginAdvanceRuleCounters(pluginTestState.frame, pluginTestState.rule);
-    pluginTestState.nextSendAt = now + pluginTestState.intervalMs;
-}
-
 static void webTask(void *)
 {
     for (;;)
@@ -3421,13 +2095,8 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     dashHandler = handler;
     dashDriver = driver;
 #endif
-    if (dashDriver)
-        dashDriver->onSendFrame = mcpDashOnTxFrame;
-    pluginSetDiagnosticsLogger([](const char *message)
-                               { dashLog(String(message)); });
     startMs = millis();
     fpsLastMs = millis();
-    dashResetWriteProbe();
 
     if (!SPIFFS.begin(true))
         dashLog("[WARN] SPIFFS mount failed");
@@ -3441,19 +2110,6 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     dashInitHandlers();
     dashSwapHandler(hwMode);
     dashApplyFilters();
-
-    // 从SPIFFS加载插件
-    pluginLoadAll();
-    dashRestorePluginStates();
-    if (pluginCount > 0)
-    {
-        dashLog("[PLG] Loaded " + String(pluginCount) + " plugin(s)");
-        dashReapplyFiltersWithPlugins();
-    }
-
-    // 设置插件处理钩子
-    appPluginProcess = dashPluginProcess;
-    pluginBeforeSend = dashApplyHw3OffsetSlew;
 
     ArduinoOTA.setHostname("ev-open-can-tools");
     ArduinoOTA.setPassword(DASH_OTA_PASS);
@@ -3477,18 +2133,8 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/rec_stop", HTTP_POST, handleRecStop);
     server.on("/rec_status", HTTP_GET, handleRecStatus);
     server.on("/rec_download", HTTP_GET, handleRecDownload);
-    server.on("/disable", HTTP_POST, handleDisable);
     server.on("/reboot", HTTP_POST, handleReboot);
     server.on("/update", HTTP_POST, handleOtaResult, handleOtaUpload);
-    server.on("/plugins", HTTP_GET, handlePluginList);
-    server.on("/plugin_upload", HTTP_POST, handlePluginUpload);
-    server.on("/plugin_install", HTTP_POST, handlePluginInstallFromUrl);
-    server.on("/plugin_toggle", HTTP_POST, handlePluginToggle);
-    server.on("/plugin_remove", HTTP_POST, handlePluginRemove);
-    server.on("/plugin_priority", HTTP_POST, handlePluginPriority);
-    server.on("/plugin_test", HTTP_POST, handlePluginTest);
-    server.on("/plugin_test_status", HTTP_GET, handlePluginTestStatus);
-    server.on("/plugin_test_stop", HTTP_POST, handlePluginTestStop);
     server.on("/ap_config", HTTP_POST, handleApConfig);
     server.on("/ap_status", HTTP_GET, handleApStatus);
     server.on("/can_pins", HTTP_GET, handleCanPins);
@@ -3522,10 +2168,6 @@ static void mcpDashboardLoop()
 {
     if (Update.isRunning())
         return;
-    dashFlushPluginStatesIfDue();
-    dashPluginTestTick();
-    if (dashInjectionActive() && dashDriver)
-        pluginEmitPeriodicTick(*dashDriver, millis());
     dashCheckBusHealth();
     if (canOnline && millis() - lastFrameMs > 10000)
     {

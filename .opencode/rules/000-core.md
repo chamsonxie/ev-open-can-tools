@@ -8,7 +8,6 @@ Sits on a vehicle CAN bus, monitors CAN frames, and applies real-time modificati
 - Speed profile injection (follow distance → speed profile mapping)
 - Autopilot nag suppression (CAN ID 880 counter+1 echo)
 - AP Injection Gate (only inject when AP active, parked, or summoning)
-- Plugin system for user-defined CAN modification rules
 - GTW UDS silencing (gateway broadcast suppression)
 - Dashboard web UI for configuration, sniffer, recorder, OTA updates
 

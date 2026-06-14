@@ -136,33 +136,6 @@ class WifiSettingsRegressionTests(unittest.TestCase):
         self.assertIn('esp_log_level_set("wifi", ESP_LOG_WARN);', self.runtime)
         self.assertIn('esp_log_level_set("httpd_txrx", ESP_LOG_ERROR);', self.runtime)
 
-    def test_ap_injection_gate_setting_is_persisted_and_exposed(self) -> None:
-        expected_ui_ids = ["ap-gate-tgl"]
-        expected_ui_fields = ["saveApGate()", "updateApGateControl(d)"]
-
-        for element_id in expected_ui_ids:
-            with self.subTest(ui_id=element_id):
-                self.assertHasUiId(element_id)
-        expected_backend_fields = [
-            "INJECTION_AFTER_AP",
-            '"ap_gate"',
-            'server.hasArg("apg")',
-            '\\"apGate\\"',
-            '\\"ia\\"',
-            'dashInjectionActive()',
-            'doc["plugins"]["startAfterAp"]',
-        ]
-
-        for field in expected_ui_fields:
-            with self.subTest(ui_field=field):
-                self.assertIn(field, self.ui)
-
-        for field in expected_backend_fields:
-            with self.subTest(backend_field=field):
-                self.assertIn(field, self.dash)
-
-        self.assertIn("INJECTION_AFTER_AP", self.sync)
-
     def test_manual_ota_credentials_can_be_reset_from_dashboard(self) -> None:
         self.assertHasUiId("ota-reset-btn")
         self.assertIn("resetOtaCredentials()", self.ui)

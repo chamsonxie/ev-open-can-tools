@@ -26,8 +26,6 @@ using SelectedHandler = HW4Handler;
 #else
 using SelectedHandler = HW3Handler;
 #endif
-#elif defined(NAG_KILLER)
-using SelectedHandler = NagHandler;
 #elif defined(HW4)
 using SelectedHandler = HW4Handler;
 #elif defined(HW3)
@@ -35,15 +33,12 @@ using SelectedHandler = HW3Handler;
 #elif defined(LEGACY)
 using SelectedHandler = LegacyHandler;
 #else
-#error "Define HW4, HW3, LEGACY, or NAG_KILLER in build_flags"
+#error "Define HW4, HW3, or LEGACY in build_flags"
 #endif
 
 static std::unique_ptr<CanDriver> appDriver;
 static std::unique_ptr<CarManagerBase> appHandler;
 static CarManagerBase *appActiveHandler = nullptr;
-
-// 插件处理钩子 — 由仪表盘设置，在处理程序之后应用插件规则
-static void (*appPluginProcess)(const CanFrame &, CanDriver &) = nullptr;
 
 static volatile bool frameReady = true;
 static void canISR() { frameReady = true; }
@@ -122,10 +117,7 @@ static void appLoop()
             frame.bus = CAN_BUS_DEFAULT;
         digitalWrite(PIN_LED, LOW);
         h->frameCount++;
-        CanFrame original = frame;
-        h->handleMessage(frame, *appDriver);
-        if (appPluginProcess)
-            appPluginProcess(original, *appDriver);
+        h->handleMessage(frame);
 #if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD)
         if (++framesThisLoop >= 32)
         {

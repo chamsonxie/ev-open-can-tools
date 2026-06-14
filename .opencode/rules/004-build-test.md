@@ -39,8 +39,7 @@ pio test -e native
 # Run specific native test suites
 pio test -e native_dashboard
 pio test -e native_nag
-pio test -e native_plugin_engine
-pio test -e native_plugin_engine_custom_key
+
 pio test -e native_injection_after_ap
 pio test -e native_bypass_tlssc_requirement
 pio test -e native_log_buffer
@@ -51,7 +50,7 @@ python -m unittest discover -s test -p 'test_*.py'
 
 # Run ALL CI tests (parallel)
 pio test -e native -e native_dashboard -e native_nag \
-        -e native_plugin_engine -e native_plugin_engine_custom_key
+
 ```
 
 ## CI Pipeline (`.github/workflows/tests.yml`)

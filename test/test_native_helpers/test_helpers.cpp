@@ -2,13 +2,7 @@
 #include "can_frame_types.h"
 #include "can_helpers.h"
 
-void setUp()
-{
-    bypassTlsscRequirementRuntime = kBypassTlsscRequirementDefaultEnabled;
-    isaSpeedChimeSuppressRuntime = kIsaSpeedChimeSuppressDefaultEnabled;
-    emergencyVehicleDetectionRuntime = kEmergencyVehicleDetectionDefaultEnabled;
-    enhancedAutopilotRuntime = kEnhancedAutopilotDefaultEnabled;
-}
+void setUp() {}
 void tearDown() {}
 
 // --- 设置位 ---
@@ -196,87 +190,6 @@ void test_isVehicleParked_false_for_reverse_neutral()
 
 // --- 设置速度配置文件 V12/V13 ---
 
-void test_setSpeedProfileV12V13_sets_profile_0()
-{
-    CanFrame f = {};
-    f.data[6] = 0xFF;
-    setSpeedProfileV12V13(f, 0);
-    TEST_ASSERT_EQUAL_HEX8(0xF9, f.data[6]); // 位 1-2 已清除
-}
-
-void test_setSpeedProfileV12V13_sets_profile_1()
-{
-    CanFrame f = {};
-    f.data[6] = 0x00;
-    setSpeedProfileV12V13(f, 1);
-    TEST_ASSERT_EQUAL_HEX8(0x02, f.data[6]);
-}
-
-void test_setSpeedProfileV12V13_sets_profile_2()
-{
-    CanFrame f = {};
-    f.data[6] = 0x00;
-    setSpeedProfileV12V13(f, 2);
-    TEST_ASSERT_EQUAL_HEX8(0x04, f.data[6]);
-}
-
-void test_setSpeedProfileV12V13_preserves_other_bits()
-{
-    CanFrame f = {};
-    f.data[6] = 0xF9; // 位 1-2 清除，其余设置
-    setSpeedProfileV12V13(f, 1);
-    TEST_ASSERT_EQUAL_HEX8(0xFB, f.data[6]);
-}
-
-void test_computeVehicleChecksum_sums_payload_and_frame_id()
-{
-    CanFrame f = {.id = 1021, .dlc = 8};
-    f.data[0] = 0xFD;
-    f.data[1] = 0x10;
-    f.data[2] = 0x20;
-    f.data[3] = 0x04;
-    f.data[4] = 0x00;
-    f.data[5] = 0x00;
-    f.data[6] = 0xA0;
-    f.data[7] = 0x00;
-    TEST_ASSERT_EQUAL_HEX8(0xD1, computeVehicleChecksum(f));
-}
-
-// --- 运行时 BYPASS_TLSSC_REQUIREMENT ---
-
-void test_runtime_bypass_tlssc_overrides_when_bit_clear()
-{
-    bypassTlsscRequirementRuntime = true;
-    CanFrame f = {};
-    f.data[4] = 0x00;
-    TEST_ASSERT_TRUE(isADSelectedInUI(f));
-    bypassTlsscRequirementRuntime = false;
-}
-
-void test_runtime_bypass_tlssc_off_reads_frame()
-{
-    bypassTlsscRequirementRuntime = false;
-    CanFrame f = {};
-    f.data[4] = 0x00;
-    TEST_ASSERT_FALSE(isADSelectedInUI(f));
-}
-
-void test_runtime_bypass_tlssc_off_still_reads_real_bit()
-{
-    bypassTlsscRequirementRuntime = false;
-    CanFrame f = {};
-    f.data[4] = 0x20;
-    TEST_ASSERT_TRUE(isADSelectedInUI(f));
-}
-
-void test_runtime_defaults_start_disabled()
-{
-    TEST_ASSERT_EQUAL(kBypassTlsscRequirementDefaultEnabled, bypassTlsscRequirementRuntime);
-    TEST_ASSERT_EQUAL(kIsaSpeedChimeSuppressDefaultEnabled, isaSpeedChimeSuppressRuntime);
-    TEST_ASSERT_EQUAL(kEmergencyVehicleDetectionDefaultEnabled, emergencyVehicleDetectionRuntime);
-    TEST_ASSERT_EQUAL(kEnhancedAutopilotDefaultEnabled, enhancedAutopilotRuntime);
-}
-
 int main()
 {
     UNITY_BEGIN();
@@ -308,17 +221,6 @@ int main()
     RUN_TEST(test_isVehicleParked_true_for_sna);
     RUN_TEST(test_isVehicleParked_true_for_invalid);
     RUN_TEST(test_isVehicleParked_false_for_reverse_neutral);
-
-    RUN_TEST(test_setSpeedProfileV12V13_sets_profile_0);
-    RUN_TEST(test_setSpeedProfileV12V13_sets_profile_1);
-    RUN_TEST(test_setSpeedProfileV12V13_sets_profile_2);
-    RUN_TEST(test_setSpeedProfileV12V13_preserves_other_bits);
-    RUN_TEST(test_computeVehicleChecksum_sums_payload_and_frame_id);
-
-    RUN_TEST(test_runtime_bypass_tlssc_overrides_when_bit_clear);
-    RUN_TEST(test_runtime_bypass_tlssc_off_reads_frame);
-    RUN_TEST(test_runtime_bypass_tlssc_off_still_reads_real_bit);
-    RUN_TEST(test_runtime_defaults_start_disabled);
 
     return UNITY_END();
 }

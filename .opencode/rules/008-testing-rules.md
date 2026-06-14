@@ -38,8 +38,6 @@
 | `native` | helpers, legacy, hw3, hw4, twai_filter |
 | `native_dashboard` | Dashboard mode handler behavior |
 | `native_nag` | NagHandler (CAN 880) |
-| `native_plugin_engine` | Plugin engine (JSON parsing, ops) |
-| `native_plugin_engine_custom_key` | Plugin engine with custom UDS key |
 | `native_mcp2515_recovery` | MCP2515 bus-off recovery |
 | `native_bypass_tlssc_requirement` | TLSSC bypass behavior |
 | `native_injection_after_ap` | AP Injection Gate behavior |
