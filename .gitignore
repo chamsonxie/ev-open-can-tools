@@ -248,3 +248,5 @@ sdkconfig.*
 .claude
 managed_components/
 dependencies.lock
+
+opendbc
