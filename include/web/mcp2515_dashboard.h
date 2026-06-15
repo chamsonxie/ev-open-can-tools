@@ -201,7 +201,7 @@ static const char *decodeCanId(uint32_t id)
     case 0x103:
         return "VCRIGHT_doorStatus (右前门状态)";
     case 0x108:
-        return "DI_torque (电机扭矩/转速)";
+        return "P-DI_torque (电机扭矩/转速)";
     case 0x116:
         return "DI_torque2 (车速/刹车/档位)";
     case 0x118:
@@ -209,29 +209,29 @@ static const char *decodeCanId(uint32_t id)
     case 0x129:
         return "SCCM_steeringAngleSensor (方向盘转角)";
     case 0x145:
-        return "ESP_status (ESP状态)";
+        return "P-ESP_status (ESP状态)";
     case 0x155:
-        return "ESP_B (车速)";
+        return "P-ESP_B (车速/轮转方向)";
     case 0x175:
         return "ESP_wheelSpeeds (四轮轮速)";
     case 0x186:
         return "DI_autonomyControl (跟车距离/ACA)";
     case 0x221:
-        return "VCFRONT_LVPowerState (低压电源)";
+        return "P-VCFRONT_LVPowerState (低压电源)";
     case 0x238:
         return "STW_ACTN_RQ (方向盘开关)";
     case 0x257:
-        return "DI_speed (车速显示)";
+        return "P-DI_speed (车速显示)";
     case 0x25D:
-        return "DAS_road (红绿灯/停止线)";
+        return "P-DAS_road (红绿灯/停止线)";
     case 0x262:
         return "DI_torque1 (油门/转速)";
     case 0x27D:
-        return "APS_eacMonitor (EAC监控)";
+        return "P-APS_eacMonitor (EAC监控)";
     case 0x286:
-        return "DI_state (驱动单元状态)";
+        return "P-DI_state (驱动单元状态)";
     case 0x293:
-        return "DAS_settings (辅助驾驶设置)";
+        return "P-DAS_settings (辅助驾驶设置)";
     case 0x297:
         return "SCCM_steeringAngle (方向盘)";
     case 0x2B9:
