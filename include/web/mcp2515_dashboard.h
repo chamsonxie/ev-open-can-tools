@@ -202,45 +202,83 @@ static const char *decodeCanId(uint32_t id)
     switch (id)
     {
     case 0x045:
-        return "STW_ACTN_RQ";
+        return "DI_torqueDriver";
+    case 0x102:
+        return "VCLEFT_doorStatus (左前门状态)";
+    case 0x103:
+        return "VCRIGHT_doorStatus (右前门状态)";
+    case 0x108:
+        return "DI_torque (电机扭矩/转速)";
     case 0x116:
         return "DI_torque2 (车速/刹车/档位)";
     case 0x118:
         return "DI_systemStatus (油门/档位/刹车)";
     case 0x129:
-        return "Steering angle";
+        return "SCCM_steeringAngleSensor (方向盘转角)";
+    case 0x145:
+        return "ESP_status (ESP状态)";
     case 0x155:
         return "ESP_B (车速)";
     case 0x175:
-        return "Speed";
+        return "ESP_wheelSpeeds (四轮轮速)";
     case 0x186:
-        return "Gear/Drive state";
+        return "DI_autonomyControl (跟车距离/ACA)";
+    case 0x221:
+        return "VCFRONT_LVPowerState (低压电源)";
+    case 0x238:
+        return "STW_ACTN_RQ (方向盘开关)";
     case 0x257:
-        return "State of charge";
+        return "DI_speed (车速显示)";
+    case 0x25D:
+        return "DAS_road (红绿灯/停止线)";
     case 0x262:
         return "DI_torque1 (油门/转速)";
+    case 0x27D:
+        return "APS_eacMonitor (EAC监控)";
+    case 0x286:
+        return "DI_state (驱动单元状态)";
     case 0x293:
-        return "DAS control";
+        return "DAS_settings (辅助驾驶设置)";
     case 0x297:
         return "SCCM_steeringAngle (方向盘)";
+    case 0x2B9:
+        return "DAS_control (ACC加减速控制)";
+    case 0x311:
+        return "UI_warning (仪表警告)";
     case 0x321:
         return "Autopilot state";
     case 0x329:
         return "UI_autopilot";
+    case 0x343:
+        return "VCRIGHT_status (右车身状态)";
+    case 0x370:
+        return "EPAS3S_sysStatus (转向/手握方向盘)";
     case 0x389:
-        return "DAS_status2";
+        return "DAS_status2 (辅助驾驶状态2)";
     case 0x399:
-        return "DAS_status / GTW_autopilot";
+        return "GTW_autopilot";
+    case 0x39B:
+        return "DAS_status (AP状态/盲区监测)";
+    case 0x39D:
+        return "IBST_status (iBooster制动)";
+    case 0x3C2:
+        return "VCLEFT_switchStatus (左车身开关)";
+    case 0x3C9:
+        return "APS_status (AP计算机状态)";
     case 0x3E8:
         return "UI_driverAssistControl";
     case 0x3E9:
         return "DAS_bodyControls (实际转向灯/雨刷)";
+    case 0x3F5:
+        return "VCFRONT_lighting (前部灯光)";
     case 0x3F8:
         return "UI_selfParkRequest (召唤)";
     case 0x3FD:
         return "UI_selfParkRequest (召唤)";
+    case 0x488:
+        return "DAS_steeringControl (辅助驾驶转向)";
     case 0x553:
-        return "SCCM_rightStalk";
+        return "SCCM_rightStalk (右侧拨杆)";
     case 0x585:
         return "SCCM_leftStalk (转向灯拨杆)";
     case 0x7FF:
@@ -257,17 +295,39 @@ static const char *decodeCanId(uint32_t id)
 // TWAI 驱动会按此列表做精确软件过滤（不会收到无关帧）
 // MCP2515 硬件只有 6 个滤波槽，dashApplyFilters() 会尽量覆盖其中最重要的
 static constexpr uint32_t kDashboardSniffIds[] = {
+    0x102, // VCLEFT_doorStatus: 左前门状态
+    0x103, // VCRIGHT_doorStatus: 右前门状态
+    0x108, // DI_torque: 电机扭矩/转速
     0x116, // DI_torque2: 车速 (DI_vehicleSpeed)、刹车踏板、档位
     0x118, // DI_systemStatus: 油门踏板、档位、刹车状态、ACA
+    0x145, // ESP_status: ESP 状态
     0x155, // ESP_B: 车速 (ESP_vehicleSpeed)
+    0x175, // ESP_wheelSpeeds: 四轮轮速
+    0x221, // VCFRONT_LVPowerState: 低压电源状态
+    0x238, // STW_ACTN_RQ: 方向盘开关/巡航控制
+    0x257, // DI_speed: 车速显示
+    0x25D, // DAS_road: 道路信息 (红绿灯/停止线)
     0x262, // DI_torque1: 油门踏板更详细 + 电机转速
+    0x27D, // APS_eacMonitor: EAC 监控
+    0x286, // DI_state: 驱动单元状态
+    0x293, // DAS_settings: 辅助驾驶设置
     0x297, // SCCM_steeringAngleSensor: 方向盘转角
-    0x585, // SCCM_leftStalk: 转向灯开关 (左拨杆)、远光、雨刷
-    0x553, // SCCM_rightStalk: 右侧拨杆
-    0x389, // DAS_status2
+    0x2B9, // DAS_control: 辅助驾驶控制 (加减速)
+    0x311, // UI_warning: 仪表警告状态
+    0x343, // VCRIGHT_status: 右车身控制器状态
+    0x370, // EPAS3S_sysStatus: 转向系统状态 (含手握方向盘)
+    0x389, // DAS_status2: 辅助驾驶状态2
     0x399, // AutopilotStatus / GTW_autopilot
+    0x39B, // DAS_status: 辅助驾驶状态 (含 AP 状态/盲区监测)
+    0x39D, // IBST_status: iBooster 制动状态
+    0x3C2, // VCLEFT_switchStatus: 左车身开关状态
+    0x3C9, // APS_status: AP 计算机状态
     0x3E9, // DAS_bodyControls: 灯光请求、转向灯实际状态、雨刷速度
+    0x3F5, // VCFRONT_lighting: 前部灯光状态
     0x3F8, 0x3FD, // UI_selfParkRequest (召唤)
+    0x488, // DAS_steeringControl: 辅助驾驶转向控制
+    0x553, // SCCM_rightStalk: 右侧拨杆
+    0x585, // SCCM_leftStalk: 转向灯开关 (左拨杆)、远光、雨刷
     0x7FF, // GTW 系统状态 mux2 AP 状态
     0x921, // GTW_autopilot
 };
