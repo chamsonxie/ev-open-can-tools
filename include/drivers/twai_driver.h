@@ -41,8 +41,17 @@ public:
 
     void setFilters(const uint32_t *ids, uint8_t count) override
     {
+        lock();
         if (count == 0)
+        {
+            // 放开过滤：嗅探器/全总线模式，接收所有帧
+            f_config_ = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+            exactFilterCount_ = 0;
+            stopAndUninstallLocked();
+            driverOK_ = installAndStartLocked();
+            unlock();
             return;
+        }
 
         uint32_t differ = 0;
         for (uint8_t i = 1; i < count; i++)
@@ -56,7 +65,6 @@ public:
         nextFilter.acceptance_mask = (differ << 21) | 0x001FFFFF;
         nextFilter.single_filter = true;
 
-        lock();
         // TWAI 只有掩码过滤器；稀疏 ID 集可能通过误报。
         exactFilterCount_ = (count < kMaxExactFilters) ? count : kMaxExactFilters;
         for (uint8_t i = 0; i < exactFilterCount_; i++)

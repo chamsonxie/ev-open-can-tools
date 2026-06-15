@@ -25,6 +25,7 @@
 #include "drivers/esp32_mcp2515_driver.h"
 #endif
 #include "web/mcp2515_dashboard_ui.h"
+#include "can_translate.h"
 
 #ifndef DASH_SSID
 #error "Define -DDASH_SSID in build_flags (e.g. -DDASH_SSID=\\\"ADUnlock-1234\\\")"
@@ -202,30 +203,75 @@ static const char *decodeCanId(uint32_t id)
     {
     case 0x045:
         return "STW_ACTN_RQ";
+    case 0x116:
+        return "DI_torque2 (车速/刹车/档位)";
+    case 0x118:
+        return "DI_systemStatus (油门/档位/刹车)";
     case 0x129:
         return "Steering angle";
+    case 0x155:
+        return "ESP_B (车速)";
     case 0x175:
         return "Speed";
     case 0x186:
         return "Gear/Drive state";
     case 0x257:
         return "State of charge";
+    case 0x262:
+        return "DI_torque1 (油门/转速)";
     case 0x293:
         return "DAS control";
+    case 0x297:
+        return "SCCM_steeringAngle (方向盘)";
     case 0x321:
         return "Autopilot state";
     case 0x329:
         return "UI_autopilot";
+    case 0x389:
+        return "DAS_status2";
     case 0x399:
-        return "DAS_status";
+        return "DAS_status / GTW_autopilot";
     case 0x3E8:
         return "UI_driverAssistControl";
+    case 0x3E9:
+        return "DAS_bodyControls (实际转向灯/雨刷)";
+    case 0x3F8:
+        return "UI_selfParkRequest (召唤)";
     case 0x3FD:
-        return "UI_autopilotControl";
+        return "UI_selfParkRequest (召唤)";
+    case 0x553:
+        return "SCCM_rightStalk";
+    case 0x585:
+        return "SCCM_leftStalk (转向灯拨杆)";
+    case 0x7FF:
+        return "GTW_systemStatus (AP状态)";
+    case 0x921:
+        return "GTW_autopilot";
     default:
         return "";
     }
 }
+
+// 供 Dashboard 嗅探器/记录器使用的“常用信号”白名单
+// 覆盖：车速、油门、刹车、档位、转向灯（拨杆）、方向盘转角、AP状态 等
+// TWAI 驱动会按此列表做精确软件过滤（不会收到无关帧）
+// MCP2515 硬件只有 6 个滤波槽，dashApplyFilters() 会尽量覆盖其中最重要的
+static constexpr uint32_t kDashboardSniffIds[] = {
+    0x116, // DI_torque2: 车速 (DI_vehicleSpeed)、刹车踏板、档位
+    0x118, // DI_systemStatus: 油门踏板、档位、刹车状态、ACA
+    0x155, // ESP_B: 车速 (ESP_vehicleSpeed)
+    0x262, // DI_torque1: 油门踏板更详细 + 电机转速
+    0x297, // SCCM_steeringAngleSensor: 方向盘转角
+    0x585, // SCCM_leftStalk: 转向灯开关 (左拨杆)、远光、雨刷
+    0x553, // SCCM_rightStalk: 右侧拨杆
+    0x389, // DAS_status2
+    0x399, // AutopilotStatus / GTW_autopilot
+    0x3E9, // DAS_bodyControls: 灯光请求、转向灯实际状态、雨刷速度
+    0x3F8, 0x3FD, // UI_selfParkRequest (召唤)
+    0x7FF, // GTW 系统状态 mux2 AP 状态
+    0x921, // GTW_autopilot
+};
+static constexpr uint8_t kDashboardSniffIdCount = sizeof(kDashboardSniffIds) / sizeof(kDashboardSniffIds[0]);
 
 static void sniffPush(const CanFrame &f)
 {
@@ -531,48 +577,33 @@ static void dashLoadPrefs()
 
 // 仅MCP2515：在硬件模式切换时重新加载精细过滤器寄存器。
 // 其他构建在dashSwapHandler中使用dashDriver->setFilters()。
+// 
+// 由于 MCP2515 只有 6 个硬件滤波槽，这里只保留“常用信号”白名单中最关键的 6 个：
+// 车速 (0x116/0x155)、油门刹车档位 (0x118)、转向灯拨杆 (0x585)、方向盘 (0x297)、
+// 召唤 (0x3F8)、车身控制/实际转向灯 (0x3E9)。
+// 这样既能让处理器逻辑正常工作，又能让嗅探器和翻译面板看到用户关心的信号，
+// 不会把整车所有 CAN 帧都拉进来。
 static void dashApplyFilters()
 {
 #if defined(DRIVER_ESP32_EXT_MCP2515)
     if (!dashMcp)
         return;
     dashMcp->setConfigMode();
-    if (hwMode == 0)
-    {
-        dashMcp->setFilterMask(MCP2515::MASK0, false, 0x7FF);
-        dashMcp->setFilter(MCP2515::RXF0, false, 69);
-        dashMcp->setFilter(MCP2515::RXF1, false, 280);
-        dashMcp->setFilterMask(MCP2515::MASK1, false, 0x7FF);
-        dashMcp->setFilter(MCP2515::RXF2, false, 1006);
-        dashMcp->setFilter(MCP2515::RXF3, false, 280);
-        dashMcp->setFilter(MCP2515::RXF4, false, 69);
-        dashMcp->setFilter(MCP2515::RXF5, false, 1006);
-    }
-    else if (hwMode == 2)
-    {
-        dashMcp->setFilterMask(MCP2515::MASK0, false, 0x7FF);
-        dashMcp->setFilter(MCP2515::RXF0, false, 921);
-        dashMcp->setFilter(MCP2515::RXF1, false, 1021);
-        dashMcp->setFilterMask(MCP2515::MASK1, false, 0x7FF);
-        dashMcp->setFilter(MCP2515::RXF2, false, 1016);
-        dashMcp->setFilter(MCP2515::RXF3, false, 280);
-        dashMcp->setFilter(MCP2515::RXF4, false, 1016);
-        dashMcp->setFilter(MCP2515::RXF5, false, 921);
-    }
-    else
-    {
-        dashMcp->setFilterMask(MCP2515::MASK0, false, 0x7FF);
-        dashMcp->setFilter(MCP2515::RXF0, false, 1016);
-        dashMcp->setFilter(MCP2515::RXF1, false, 1021);
-        dashMcp->setFilterMask(MCP2515::MASK1, false, 0x7FF);
-        dashMcp->setFilter(MCP2515::RXF2, false, 1016);
-        dashMcp->setFilter(MCP2515::RXF3, false, 280);
-        dashMcp->setFilter(MCP2515::RXF4, false, 1016);
-        dashMcp->setFilter(MCP2515::RXF5, false, 1021);
-    }
+
+    // 6 个硬件精确匹配（mask 0x7FF）
+    // 优先级：车速 + 油门刹车档位 + 转向灯 + 方向盘 + 召唤 + 实际车灯/转向状态
+    dashMcp->setFilterMask(MCP2515::MASK0, false, 0x7FF);
+    dashMcp->setFilter(MCP2515::RXF0, false, 0x116); // 车速 (DI_torque2)
+    dashMcp->setFilter(MCP2515::RXF1, false, 0x118); // 油门/档位/刹车 (DI_systemStatus)
+
+    dashMcp->setFilterMask(MCP2515::MASK1, false, 0x7FF);
+    dashMcp->setFilter(MCP2515::RXF2, false, 0x585); // 左拨杆（转向灯请求）
+    dashMcp->setFilter(MCP2515::RXF3, false, 0x297); // 方向盘转角
+    dashMcp->setFilter(MCP2515::RXF4, false, 0x3F8); // 召唤请求 (UI_selfPark)
+    dashMcp->setFilter(MCP2515::RXF5, false, 0x3E9); // 车身控制（实际转向灯、雨刷、灯光）
+
     dashMcp->setNormalMode();
-    dashLog("[CFG] Filters set for " + String(hwMode == 0 ? "LEGACY" : hwMode == 1 ? "HW3"
-                                                                                    : "HW4"));
+    dashLog("[CFG] MCP2515 filters: 常用信号白名单（车速/油门/刹车/转向灯/方向盘/召唤）");
 #endif
 }
 
@@ -752,7 +783,10 @@ static void handleFrames()
                 j += ",";
             j += String(f.data[b]);
         }
-        j += "],\"name\":\"" + jsonEscape(decodeCanId(f.id)) + "\"}";
+        char trans[96] = {0};
+        formatCanTranslation(f.id, f.data, f.dlc, trans, sizeof(trans));
+        j += "],\"name\":\"" + jsonEscape(decodeCanId(f.id)) +
+             "\",\"trans\":\"" + jsonEscape(trans) + "\"}";
     }
     j += "]}";
     server.send(200, "application/json", j);
@@ -2056,17 +2090,38 @@ static void dashSwapHandler(uint8_t mode)
     appActiveHandler = next;
     dashHandler = next;
     dashApplyRuntimeState();
-    // 为新处理器更新驱动接受过滤器。
-    // 对于MCP2515（扩展版），dashApplyFilters()还会微调硬件
-    // 过滤器寄存器。对于TWAI和旧版MCP2515，这个抽象调用就足够了。
+    // 构建“处理器逻辑 ID” + “Dashboard 常用信号白名单”的并集
+    // 这样处理器能拿到它需要的所有帧（例如 390 等），同时嗅探器只收到车速/油门/刹车/转向灯/方向盘/AP 等常用信号，不会泛洪。
+    uint32_t combined[64];
+    uint8_t n = 0;
+    auto addId = [&](uint32_t id) {
+        for (uint8_t i = 0; i < n; i++)
+            if (combined[i] == id)
+                return;
+        if (n < 64)
+            combined[n++] = id;
+    };
+    const uint32_t *hids = next->filterIds();
+    uint8_t hcnt = next->filterIdCount();
+    for (uint8_t i = 0; i < hcnt; i++)
+        addId(hids[i]);
+    for (uint8_t i = 0; i < kDashboardSniffIdCount; i++)
+        addId(kDashboardSniffIds[i]);
+
     if (dashDriver)
-        dashDriver->setFilters(next->filterIds(), next->filterIdCount());
+        dashDriver->setFilters(combined, n);
+
+#if defined(DRIVER_ESP32_EXT_MCP2515)
+    // MCP2515 硬件只有有限滤波槽，这里用 dashApplyFilters() 按白名单重新配置
+    dashApplyFilters();
+#endif
+
     const char *hwName = "LEGACY";
     if (mode == 1)
         hwName = "HW3";
     else if (mode == 2)
         hwName = "HW4";
-    dashLog("[CFG] Handler switched to " + String(hwName));
+    dashLog("[CFG] Handler switched to " + String(hwName) + "（嗅探器使用常用信号白名单）");
 }
 
 #if defined(DRIVER_ESP32_EXT_MCP2515)
@@ -2096,6 +2151,13 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     dashInitHandlers();
     dashSwapHandler(hwMode);
     dashApplyFilters();
+    // 嗅探器/记录器只接收“常用信号”白名单（车速 0x116/0x155、油门刹车档位 0x118、转向灯拨杆 0x585、方向盘 0x297、召唤 0x3F8、车身实际状态 0x3E9 等）。
+    // 处理器自己的窄过滤逻辑不受影响。
+    if (dashDriver)
+        dashDriver->setFilters(kDashboardSniffIds, kDashboardSniffIdCount);
+#if defined(DRIVER_ESP32_EXT_MCP2515)
+    // MCP2515 硬件滤波已在 dashApplyFilters() 中按白名单中最关键的 6 个 ID 配置
+#endif
 
     ArduinoOTA.setHostname("ev-open-can-tools");
     ArduinoOTA.setPassword(DASH_OTA_PASS);
