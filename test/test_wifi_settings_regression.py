@@ -94,23 +94,6 @@ class WifiSettingsRegressionTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertIn(field, status_section)
 
-    def test_wifi_settings_backup_roundtrip_fields_exist(self) -> None:
-        expected_export_import_fields = [
-            '\\"wifi\\":{\\"ssid\\"',
-            'doc["wifi"].is<JsonObject>()',
-            'doc["wifi"]["ssid"]',
-            'doc["wifi"]["pass"]',
-            'doc["wifi"]["static"]',
-            'doc["wifi"]["ip"]',
-            'doc["wifi"]["gw"]',
-            'doc["wifi"]["mask"]',
-            'doc["wifi"]["dns"]',
-        ]
-
-        for field in expected_export_import_fields:
-            with self.subTest(field=field):
-                self.assertIn(field, self.dash)
-
     def test_wifi_config_defers_reconnect_until_after_response(self) -> None:
         section = self.dash[
             self.dash.index("static void handleWifiConfig()") :

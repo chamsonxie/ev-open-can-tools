@@ -91,12 +91,7 @@ static const uint8_t mcpEflg = 0;
 
 static uint8_t hwMode = DASH_DEFAULT_HW;
 
-#ifdef RGB_BRIGHTNESS
-static constexpr uint8_t kDashLedBrightnessDefault = RGB_BRIGHTNESS;
-#else
-static constexpr uint8_t kDashLedBrightnessDefault = 32;
-#endif
-static uint8_t dashLedBrightness = kDashLedBrightnessDefault;
+
 
     // WiFi AP（热点）——运行时可覆盖
 static char apSSID[33] = "";
@@ -166,8 +161,6 @@ static void dashClearWifiNetwork(DashWifiNetwork &n)
 static void dashRotateAndConnect();
 static void dashSwapHandler(uint8_t mode);
 static void dashApplyFilters();
-static void dashApplyRuntimeState();
-
     // CAN记录器
 #ifndef REC_CAP
 #define REC_CAP 2000
@@ -427,13 +420,6 @@ static bool dashStaSsidLooksCorrupt(const String &ssid)
            ssid.indexOf("\",\"") >= 0;
 }
 
-static void dashApplyRuntimeState()
-{
-#if defined(DASH_RGB_STATUS_LED)
-    appRefreshStatusLed();
-#endif
-}
-
     // 存储配置
 static void dashSavePrefs()
 {
@@ -441,7 +427,6 @@ static void dashSavePrefs()
     prefs.putUChar("hw", hwMode);
     prefs.putUChar("hw_def", DASH_DEFAULT_HW);
     prefs.putBool("eprn", dashHandler ? (bool)dashHandler->enablePrint : true);
-    prefs.putUChar("led_b", dashLedBrightness);
     prefs.end();
 }
 
@@ -492,10 +477,8 @@ static void dashLoadPrefs()
         prefs.putUChar("hw", hwMode);
     if (storedDefaultHw != DASH_DEFAULT_HW)
         prefs.putUChar("hw_def", DASH_DEFAULT_HW);
-    dashLedBrightness = prefs.getUChar("led_b", kDashLedBrightnessDefault);
     bool ep = prefs.getBool("eprn", true);
 
-    dashApplyRuntimeState();
     if (dashHandler)
         dashHandler->enablePrint = ep;
     // 加载WiFi AP覆盖（热点名称/密码）
@@ -730,8 +713,6 @@ static void handleStatus()
     j += hwMode;
     j += ",\"eprn\":";
     j += ep ? "true" : "false";
-    j += ",\"ledB\":";
-    j += dashLedBrightness;
     j += ",\"can\":";
     j += canOnline ? "true" : "false";
     j += ",\"rx\":";
@@ -762,50 +743,7 @@ static void handleStatus()
 
 static void handleConfig()
 {
-    bool hwChanged = false;
-    if (server.hasArg("hw"))
-    {
-        uint8_t v = server.arg("hw").toInt();
-        if (v <= 2 && v != hwMode)
-        {
-            hwMode = v;
-            hwChanged = true;
-            dashLog("[CFG] HW=" + String(v == 0 ? "LEGACY" : v == 1 ? "HW3"
-                                                                     : "HW4"));
-        }
-    }
-    if (hwChanged)
-    {
-        dashSwapHandler(hwMode);
-        dashApplyFilters();
-    }
-    dashApplyRuntimeState();
     dashSavePrefs();
-    server.send(200, "application/json", "{\"ok\":true}");
-}
-
-static void handleLedBrightness()
-{
-    if (!server.hasArg("b"))
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"err\":\"missing b\"}");
-        return;
-    }
-    long raw = server.arg("b").toInt();
-    if (raw < 0)
-        raw = 0;
-    if (raw > 255)
-        raw = 255;
-    uint8_t v = static_cast<uint8_t>(raw);
-    if (v != dashLedBrightness)
-    {
-        dashLedBrightness = v;
-        dashLog("[CFG] LED brightness " + String(v));
-        dashSavePrefs();
-#if defined(DASH_RGB_STATUS_LED)
-        appRefreshStatusLed(true);
-#endif
-    }
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -817,7 +755,6 @@ static void handleLoggingConfig()
         dashHandler->enablePrint = ep;
         dashLog("[CFG] Logging " + String(ep ? "ON" : "OFF"));
     }
-    dashApplyRuntimeState();
     dashSavePrefs();
     server.send(200, "application/json", "{\"ok\":true}");
 }
@@ -1491,138 +1428,6 @@ static void handleCanPinsSave()
     server.send(200, "application/json", "{\"ok\":true,\"reboot\":true}");
 }
 
-// ── 设置备份/恢复 ───────────────────────────────────
-
-static void handleSettingsExport()
-{
-    Preferences p;
-    String apSsid = "", apPass = "", wSsid = "", wPass = "";
-    String wIp = "", wGw = "", wMask = "", wDns = "";
-    bool wStatic = false, beta = false, apHid = false;
-    int canTx = -1, canRx = -1;
-
-    if (p.begin(PREFS_NS, false))
-    {
-        if (p.isKey("ap_ssid"))
-            apSsid = p.getString("ap_ssid", "");
-        if (p.isKey("ap_pass"))
-            apPass = p.getString("ap_pass", "");
-        apHid = p.getBool("ap_hidden", false);
-        if (p.isKey("wifi_ssid"))
-            wSsid = p.getString("wifi_ssid", "");
-        if (p.isKey("wifi_pass"))
-            wPass = p.getString("wifi_pass", "");
-        wStatic = p.getBool("wifi_static", false);
-        if (p.isKey("wifi_ip"))
-            wIp = p.getString("wifi_ip", "");
-        if (p.isKey("wifi_gw"))
-            wGw = p.getString("wifi_gw", "");
-        if (p.isKey("wifi_mask"))
-            wMask = p.getString("wifi_mask", "");
-        if (p.isKey("wifi_dns"))
-            wDns = p.getString("wifi_dns", "");
-        beta = p.getBool("upd_beta", false);
-        p.end();
-    }
-    Preferences cp;
-    if (cp.begin("can", true))
-    {
-        canTx = cp.getChar("tx", -1);
-        canRx = cp.getChar("rx", -1);
-        cp.end();
-    }
-
-    String j = "{\"version\":\"" FIRMWARE_VERSION "\"";
-    j += ",\"ap\":{\"ssid\":\"" + jsonEscape(apSsid) + "\",\"pass\":\"" + jsonEscape(apPass) + "\",\"hidden\":" + String(apHid ? "true" : "false") + "}";
-    j += ",\"wifi\":{\"ssid\":\"" + jsonEscape(wSsid) + "\",\"pass\":\"" + jsonEscape(wPass) + "\"";
-    j += ",\"static\":" + String(wStatic ? "true" : "false");
-    j += ",\"ip\":\"" + jsonEscape(wIp) + "\",\"gw\":\"" + jsonEscape(wGw) + "\"";
-    j += ",\"mask\":\"" + jsonEscape(wMask) + "\",\"dns\":\"" + jsonEscape(wDns) + "\"}";
-    j += ",\"can\":{\"tx\":" + String(canTx) + ",\"rx\":" + String(canRx) + "}";
-    j += ",\"beta\":" + String(beta ? "true" : "false");
-    j += "}";
-
-    server.sendHeader("Content-Disposition", "attachment; filename=\"evtools-backup.json\"");
-    server.send(200, "application/json", j);
-}
-
-static void handleSettingsImport()
-{
-    String body = server.arg("plain");
-    if (body.length() == 0)
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"Empty body\"}");
-        return;
-    }
-
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, body);
-    if (err)
-    {
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid JSON\"}");
-        return;
-    }
-
-    Preferences p;
-    if (!p.begin(PREFS_NS, false))
-    {
-        server.send(500, "application/json", "{\"ok\":false,\"error\":\"NVS open failed\"}");
-        return;
-    }
-
-    if (doc["ap"].is<JsonObject>())
-    {
-        const char *s = doc["ap"]["ssid"] | "";
-        const char *pw = doc["ap"]["pass"] | "";
-        size_t ssidLen = strlen(s);
-        size_t passLen = strlen(pw);
-        if (ssidLen > 0 && ssidLen <= kDashMaxSsidLen)
-            p.putString("ap_ssid", s);
-        if (dashApPasswordLengthValid(passLen))
-            p.putString("ap_pass", pw);
-        if (doc["ap"]["hidden"].is<bool>())
-            p.putBool("ap_hidden", doc["ap"]["hidden"].as<bool>());
-    }
-    if (doc["wifi"].is<JsonObject>())
-    {
-        const char *s = doc["wifi"]["ssid"] | "";
-        const char *pw = doc["wifi"]["pass"] | "";
-        if (strlen(s) <= kDashMaxSsidLen && strlen(pw) <= kDashMaxPassLen)
-        {
-            p.putString("wifi_ssid", s);
-            p.putString("wifi_pass", pw);
-        }
-        p.putBool("wifi_static", doc["wifi"]["static"] | false);
-        p.putString("wifi_ip", (const char *)(doc["wifi"]["ip"] | ""));
-        p.putString("wifi_gw", (const char *)(doc["wifi"]["gw"] | ""));
-        p.putString("wifi_mask", (const char *)(doc["wifi"]["mask"] | ""));
-        p.putString("wifi_dns", (const char *)(doc["wifi"]["dns"] | ""));
-    }
-    if (doc["beta"].is<bool>())
-        p.putBool("upd_beta", doc["beta"].as<bool>());
-    p.end();
-
-    if (doc["can"].is<JsonObject>())
-    {
-        int tx = doc["can"]["tx"] | -1;
-        int rx = doc["can"]["rx"] | -1;
-        Preferences cp;
-        if (cp.begin("can", false))
-        {
-            if (tx >= 0 && tx <= 39 && rx >= 0 && rx <= 39 && tx != rx &&
-                !((tx >= 6 && tx <= 11) || (rx >= 6 && rx <= 11)))
-            {
-                cp.putChar("tx", (int8_t)tx);
-                cp.putChar("rx", (int8_t)rx);
-            }
-            cp.end();
-        }
-    }
-
-    dashLog("[BACKUP] Settings imported (reboot required)");
-    server.send(200, "application/json", "{\"ok\":true,\"reboot\":true}");
-}
-
 static void handleApConfig()
 {
     String newSsid = server.arg("ssid");
@@ -2149,7 +1954,6 @@ static void dashSwapHandler(uint8_t mode)
         next->enablePrint = (bool)dashHandler->enablePrint;
     appActiveHandler = next;
     dashHandler = next;
-    dashApplyRuntimeState();
     // 构建“处理器逻辑 ID” + “Dashboard 常用信号白名单”的并集
     // 这样处理器能拿到它需要的所有帧（例如 390 等），同时嗅探器只收到车速/油门/刹车/转向灯/方向盘/AP 等常用信号，不会泛洪。
     uint32_t combined[64];
@@ -2232,7 +2036,7 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/", HTTP_GET, handleRoot);
     server.on("/status", HTTP_GET, handleStatus);
     server.on("/config", HTTP_POST, handleConfig);
-    server.on("/led_brightness", HTTP_POST, handleLedBrightness);
+
     server.on("/logging", HTTP_POST, handleLoggingConfig);
     server.on("/frames", HTTP_GET, handleFrames);
     server.on("/log", HTTP_GET, handleLog);
@@ -2247,8 +2051,7 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/ap_status", HTTP_GET, handleApStatus);
     server.on("/can_pins", HTTP_GET, handleCanPins);
     server.on("/can_pins", HTTP_POST, handleCanPinsSave);
-    server.on("/settings_export", HTTP_GET, handleSettingsExport);
-    server.on("/settings_import", HTTP_POST, handleSettingsImport);
+
     server.on("/wifi_scan", HTTP_GET, handleWifiScan);
     server.on("/wifi_config", HTTP_POST, handleWifiConfig);
     server.on("/wifi_status", HTTP_GET, handleWifiStatus);
@@ -2282,9 +2085,6 @@ static void mcpDashboardLoop()
         canOnline = false;
         dashLog("[CAN] Bus OFFLINE (timeout)");
     }
-#if defined(DASH_RGB_STATUS_LED)
-    appRefreshStatusLed(false);
-#endif
 }
 
 #endif
