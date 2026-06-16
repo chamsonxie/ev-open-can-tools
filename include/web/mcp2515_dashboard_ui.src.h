@@ -2333,12 +2333,15 @@ async function pollEspNow(){
     if(!dashboardStatusOk)return;
     try{
       const d=await fetchPollJson('/espnow_status',3000);
+      console.log('[ESPNOW] poll ok',d);
       espNowState.scanning=d.scanning;
       espNowState.discovered=d.discovered||[];
       espNowState.paired=d.paired||null;
       renderEspNow();
       updateEspNowMeta();
-    }catch(e){}
+    }catch(e){
+      console.warn('[ESPNOW] poll error',e);
+    }
   });
 }
 
@@ -2353,13 +2356,13 @@ function renderEspNow(){
     el.innerHTML='<div style="font-size:12px;color:var(--acc);text-align:center;padding:12px">扫描中... 等待接收端设备发送暗号</div>';
     return;
   }
-  el.innerHTML=espNowState.discovered.map(d=>{
+  el.innerHTML=espNowState.discovered.map((d,i)=>{
     return '<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px">'+
       '<div style="flex:1;min-width:0">'+
       '<div>'+d.mac+' <span style="color:var(--tx3);font-size:10px">'+(d.rssi||0)+' dBm</span></div>'+
       '</div>'+
       (d.paired?'<span style="color:var(--ok);font-size:11px">已连接</span>':
-        '<button class="sniff-btn" onclick="pairEspNow(''+d.mac+'')" style="padding:4px 8px;font-size:11px">连接</button>')+
+        '<button class="sniff-btn" onclick="pairEspNow('+i+')" style="padding:4px 8px;font-size:11px">连接</button>')+
       '</div>';
   }).join('');
 }
@@ -2388,22 +2391,27 @@ function updateEspNowMeta(){
 
 async function toggleEspNowScan(){
   const action=espNowState.scanning?'stop':'start';
+  console.log('[ESPNOW] scan click',action);
   try{
     await fetch('/espnow_scan',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action='+action});
+    console.log('[ESPNOW] scan ok');
     espNowState.scanning=!espNowState.scanning;
     const st=$('espnow-scan-status');
     if(st){st.textContent=espNowState.scanning?'扫描中...':'';st.style.color='var(--acc)';}
     renderEspNow();
     updateEspNowMeta();
   }catch(e){
+    console.warn('[ESPNOW] scan error',e);
     const st=$('espnow-scan-status');
     if(st){st.textContent='操作失败';st.style.color='var(--err)';}
   }
 }
 
-async function pairEspNow(mac){
+async function pairEspNow(idx){
+  const dev=espNowState.discovered[idx];
+  if(!dev)return;
   try{
-    const r=await fetch('/espnow_pair',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'mac='+encodeURIComponent(mac)});
+    const r=await fetch('/espnow_pair',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'mac='+encodeURIComponent(dev.mac)});
     const d=await r.json();
     if(d.ok) {
       $('espnow-scan-status').textContent='已连接!';

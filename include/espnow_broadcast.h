@@ -133,7 +133,6 @@ static bool espnowInit()
 {
     if (espnowInitialized)
         return true;
-    WiFi.mode(WIFI_AP_STA);
     esp_err_t ret = esp_now_init();
     if (ret != ESP_OK)
     {

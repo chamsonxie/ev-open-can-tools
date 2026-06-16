@@ -2120,13 +2120,13 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
         dashLog("[WARN] SPIFFS mount failed");
 
     dashLoadPrefs();
-    dashStartAccessPoint(false);
+    dashStartAccessPoint(true);
     if (apHidden)
         dashLog("[WIFI] AP SSID is hidden");
     Serial.printf("[WIFI] AP: %s  IP: %s\n", apSSID, WiFi.softAPIP().toString().c_str());
 
+    vTaskDelay(pdMS_TO_TICKS(200));
     espnowInit();
-    espnowCanBroadcastEnabled = true;
 
     dashInitHandlers();
     dashSwapHandler(hwMode);
@@ -2183,6 +2183,15 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/espnow_scan", HTTP_POST, handleEspNowScan);
     server.on("/espnow_pair", HTTP_POST, handleEspNowPair);
     server.on("/espnow_unpair", HTTP_POST, handleEspNowUnpair);
+    server.on("/espnow_debug", HTTP_GET, []()
+    {
+        String r = "espnowInitialized=" + String(espnowInitialized ? "true" : "false") + "\n";
+        r += "espnowScanning=" + String(espnowScanning ? "true" : "false") + "\n";
+        r += "espnowHasPaired=" + String(espnowHasPaired ? "true" : "false") + "\n";
+        r += "espnowDiscoveredCount=" + String(espnowDiscoveredCount) + "\n";
+        r += "espnowCanBroadcastEnabled=" + String(espnowCanBroadcastEnabled ? "true" : "false") + "\n";
+        server.send(200, "text/plain", r);
+    });
 
     server.begin();
     if (strlen(staSSID) > 0)
