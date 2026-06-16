@@ -162,6 +162,8 @@ static void espnowSetCanData(uint16_t speed, uint8_t throttle, uint8_t brake,
     espnowCanTurnRight = turnRight;
 }
 
+static void espnowTickScenario();
+
 static void espnowBroadcastCanData()
 {
     if (!espnowInitialized || !espnowCanBroadcastEnabled)
@@ -170,6 +172,8 @@ static void espnowBroadcastCanData()
     if (now - espnowLastBroadcastMs < ESPNOW_CAN_BROADCAST_MS)
         return;
     espnowLastBroadcastMs = now;
+
+    espnowTickScenario();
 
     EspNowCanDataPkt pkt;
     memset(&pkt, 0, sizeof(pkt));
@@ -187,6 +191,113 @@ static void espnowBroadcastCanData()
         pkt.chksum ^= bytes[i];
 
     esp_now_send(ESPNOW_BROADCAST_MAC, bytes, sizeof(pkt));
+}
+
+static void espnowSendTestPackets()
+{
+    if (!espnowInitialized)
+        return;
+    static const uint16_t testSpeeds[] = {200, 400, 800, 1200, 0};
+    static const uint8_t testThrottles[] = {15, 30, 50, 70, 0};
+    for (int i = 0; i < 5; i++)
+    {
+        EspNowCanDataPkt pkt;
+        memset(&pkt, 0, sizeof(pkt));
+        pkt.type = ESPNOW_PKT_CAN_DATA;
+        pkt.seq = espnowSeq++;
+        pkt.speed = testSpeeds[i];
+        pkt.throttle = testThrottles[i];
+        pkt.brake = (i == 3) ? 1 : 0;
+        pkt.turnLeft = (i % 3 == 1) ? 1 : 0;
+        pkt.turnRight = (i % 3 == 2) ? 1 : 0;
+        const uint8_t *bytes = reinterpret_cast<const uint8_t *>(&pkt);
+        pkt.chksum = 0;
+        for (size_t j = 0; j < sizeof(pkt) - 1; j++)
+            pkt.chksum ^= bytes[j];
+        esp_now_send(ESPNOW_BROADCAST_MAC, bytes, sizeof(pkt));
+    }
+}
+
+// ── Scenario simulation ──
+struct EspNowScenarioStep
+{
+    unsigned long durationMs;
+    uint16_t speed;
+    uint8_t throttle;
+    uint8_t brake;
+    uint8_t turnLeft;
+    uint8_t turnRight;
+};
+
+static const EspNowScenarioStep espnowDefaultScenario[] = {
+    {2000, 0, 0, 0, 0, 0},      // Step 0: Idle
+    {1500, 0, 0, 1, 0, 0},      // Step 1: Brake
+    {3000, 400, 40, 0, 0, 0},   // Step 2: Accelerate
+    {2000, 500, 25, 0, 0, 0},   // Step 3: Cruise
+    {2500, 350, 20, 0, 1, 0},   // Step 4: Left turn signal
+    {2000, 150, 10, 0, 0, 0},   // Step 5: Slow down
+    {1000, 0, 0, 0, 0, 0},      // Step 6: Stop
+};
+static constexpr int espnowScenarioStepCount = sizeof(espnowDefaultScenario) / sizeof(espnowDefaultScenario[0]);
+
+static bool espnowScenarioActive = false;
+static int espnowScenarioStep = 0;
+static unsigned long espnowScenarioStepStarted = 0;
+static uint16_t espnowScenarioPrevSpeed = 0;
+
+static void espnowStartScenario()
+{
+    espnowScenarioActive = true;
+    espnowScenarioStep = 0;
+    espnowScenarioStepStarted = millis();
+    espnowScenarioPrevSpeed = 0;
+}
+
+static void espnowStopScenario()
+{
+    espnowScenarioActive = false;
+}
+
+static void espnowTickScenario()
+{
+    if (!espnowScenarioActive)
+        return;
+    unsigned long now = millis();
+    const EspNowScenarioStep &step = espnowDefaultScenario[espnowScenarioStep];
+    unsigned long elapsed = now - espnowScenarioStepStarted;
+
+    if (elapsed >= step.durationMs)
+    {
+        espnowScenarioPrevSpeed = step.speed;
+        espnowScenarioStep++;
+        if (espnowScenarioStep >= espnowScenarioStepCount)
+        {
+            espnowScenarioActive = false;
+            return;
+        }
+        espnowScenarioStepStarted = now;
+        elapsed = 0;
+    }
+
+    const EspNowScenarioStep &curStep = espnowDefaultScenario[espnowScenarioStep];
+
+    // Ramp speed from prev value to target over step duration
+    uint16_t speed;
+    if (curStep.durationMs == 0)
+    {
+        speed = curStep.speed;
+    }
+    else
+    {
+        unsigned long t = (elapsed < curStep.durationMs) ? elapsed : curStep.durationMs;
+        speed = espnowScenarioPrevSpeed + (static_cast<int>(curStep.speed) - static_cast<int>(espnowScenarioPrevSpeed)) * t / curStep.durationMs;
+    }
+
+    espnowCanSpeed = speed;
+    espnowCanThrottle = curStep.throttle;
+    espnowCanBrake = curStep.brake;
+    espnowCanTurnLeft = curStep.turnLeft;
+    espnowCanTurnRight = curStep.turnRight;
 }
 
 static bool espnowPairDevice(const uint8_t *mac)

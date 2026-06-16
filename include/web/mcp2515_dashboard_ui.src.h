@@ -530,7 +530,12 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
             <div class="setting-name" id="espnow-paired-name">已配对设备</div>
             <div class="setting-desc" id="espnow-paired-mac"></div>
           </div>
-          <button class="sniff-btn" onclick="unpairEspNow()" style="background:var(--errBg);border-color:var(--errBd);color:var(--err)">断开</button>
+          <div style="display:flex;gap:6px">
+            <button class="sniff-btn" onclick="sendEspNowTest()">发送测试信号</button>
+            <button class="sniff-btn" onclick="startEspNowScenario()" id="espnow-scenario-btn">开始模拟场景</button>
+            <button class="sniff-btn" onclick="unpairEspNow()" style="background:var(--errBg);border-color:var(--errBd);color:var(--err)">断开</button>
+          </div>
+          <div style="margin-top:6px;font-size:11px;color:var(--tx3)" id="espnow-scenario-status"></div>
         </div>
       </div>
       <div style="font-size:11px;color:var(--tx3);margin-top:8px;line-height:1.6">
@@ -2382,6 +2387,17 @@ function updateEspNowMeta(){
     $('espnow-status').style.color=espNowState.scanning?'var(--acc)':'var(--tx3)';
   }
   $('espnow-scan-meta').textContent=espNowState.discovered.length+' 设备';
+
+  // Scenario status
+  const scenarioEl=$('espnow-scenario-status');
+  const scenarioBtn=$('espnow-scenario-btn');
+  if(espNowState.scenarioRunning){
+    if(scenarioEl)scenarioEl.textContent='模拟进行中 (step '+espNowState.scenarioStep+') speed='+espNowState.curSpeed+' throttle='+espNowState.curThrottle+' brake='+espNowState.curBrake+' left='+espNowState.curTurnLeft+' right='+espNowState.curTurnRight;
+    if(scenarioBtn){scenarioBtn.textContent='模拟运行中...';scenarioBtn.disabled=true;}
+  }else{
+    if(scenarioEl)scenarioEl.textContent='';
+    if(scenarioBtn){scenarioBtn.textContent='开始模拟场景';scenarioBtn.disabled=false;}
+  }
   const btn=$('espnow-scan-btn');
   if(btn){
     btn.textContent=espNowState.scanning?'停止扫描':'开始扫描';
@@ -2423,6 +2439,28 @@ async function pairEspNow(idx){
     }
   }catch(e){
     $('espnow-scan-status').textContent='连接错误';
+    $('espnow-scan-status').style.color='var(--err)';
+  }
+}
+
+async function startEspNowScenario(){
+  try{
+    await fetch('/espnow_scenario',{method:'POST'});
+    const btn=$('espnow-scenario-btn');
+    if(btn){btn.textContent='模拟运行中...';btn.disabled=true;}
+  }catch(e){
+    $('espnow-scan-status').textContent='启动失败';
+    $('espnow-scan-status').style.color='var(--err)';
+  }
+}
+
+async function sendEspNowTest(){
+  try{
+    await fetch('/espnow_test',{method:'POST'});
+    $('espnow-scan-status').textContent='已发送 5 组测试信号';
+    $('espnow-scan-status').style.color='var(--ok)';
+  }catch(e){
+    $('espnow-scan-status').textContent='发送失败';
     $('espnow-scan-status').style.color='var(--err)';
   }
 }

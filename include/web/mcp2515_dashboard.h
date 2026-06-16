@@ -321,7 +321,7 @@ static constexpr uint32_t kDashboardSniffIds[] = {
     0x3F8, 0x3FD, // UI_selfParkRequest (召唤)
     0x488, // DAS_steeringControl: 辅助驾驶转向控制
     0x553, // SCCM_rightStalk: 右侧拨杆
-    0x585, // SCCM_leftStalk: 转向灯开关 (左拨杆)、远光、雨刷
+     0x249, // SCCM_leftStalk: 转向灯开关 (左拨杆)、远光、雨刷
     0x7FF, // GTW 系统状态 mux2 AP 状态
     0x921, // GTW_autopilot
 };
@@ -390,30 +390,54 @@ static void mcpDashOnFrame(const CanFrame &f)
         }
     }
 
-    if (f.dlc >= 8)
+    if (f.id == 0x116 && f.dlc >= 4)
     {
-        if (f.id == 0x116)
+        uint16_t raw = ((uint16_t)f.data[2] << 4) | (f.data[3] >> 4);
+        float mph = raw * 0.05f - 25.0f;
+        if (mph < 0)
+            mph = 0;
+        if (mph < 200)
+            espnowSetCanData(static_cast<uint16_t>(mph * 16.0f), espnowCanThrottle, espnowCanBrake, espnowCanTurnLeft, espnowCanTurnRight);
+    }
+    else if (f.id == 0x118 && f.dlc >= 5)
+    {
+        uint8_t throttle = f.data[4] * 40 / 100;
+        if (throttle > 100)
+            throttle = 100;
+        uint8_t brake = ((f.data[2] >> 3) & 0x03) != 0 ? 1 : 0;
+        espnowSetCanData(espnowCanSpeed, throttle, brake, espnowCanTurnLeft, espnowCanTurnRight);
+    }
+    else if (f.id == 0x3F5)
+    {
+        // VCFRONT_lighting:
+        //   byte 6 bits 2-5 = turnSignalLeft/RightStatus (1=ON) — actual light status
+        //   byte 0 bits 0-3 = indicatorLeft/RightRequest (2=ACTIVE_HIGH) — computer request
+        uint8_t lStatus = (f.dlc >= 7) ? ((f.data[6] >> 2) & 0x03) : 0;
+        uint8_t rStatus = (f.dlc >= 7) ? ((f.data[6] >> 4) & 0x03) : 0;
+        if (lStatus == 1 || rStatus == 1)
         {
-            uint16_t raw = ((uint16_t)f.data[2] << 4) | (f.data[3] >> 4);
-            float mph = raw * 0.05f - 25.0f;
-            if (mph < 0)
-                mph = 0;
-            if (mph < 200)
-                espnowSetCanData(static_cast<uint16_t>(mph * 16.0f), espnowCanThrottle, espnowCanBrake, espnowCanTurnLeft, espnowCanTurnRight);
+            espnowSetCanData(espnowCanSpeed, espnowCanThrottle, espnowCanBrake, lStatus == 1, rStatus == 1);
         }
-        else if (f.id == 0x118)
+        else
         {
-            uint8_t throttle = f.data[4] * 40 / 100;
-            if (throttle > 100)
-                throttle = 100;
-            uint8_t brake = ((f.data[2] >> 3) & 0x03) != 0 ? 1 : 0;
-            espnowSetCanData(espnowCanSpeed, throttle, brake, espnowCanTurnLeft, espnowCanTurnRight);
+            uint8_t leftReq = f.data[0] & 0x03;
+            uint8_t rightReq = (f.data[0] >> 2) & 0x03;
+            if (leftReq == 2 || rightReq == 2)
+                espnowSetCanData(espnowCanSpeed, espnowCanThrottle, espnowCanBrake, leftReq == 2, rightReq == 2);
         }
-        else if (f.id == 0x3E9)
-        {
-            uint8_t turnVal = f.data[1] & 0x03;
-            espnowSetCanData(espnowCanSpeed, espnowCanThrottle, espnowCanBrake, turnVal == 1 ? 1 : 0, turnVal == 2 ? 1 : 0);
-        }
+    }
+    else if (f.id == 0x3E9 && f.dlc >= 2)
+    {
+        uint8_t turnVal = f.data[1] & 0x03;
+        espnowSetCanData(espnowCanSpeed, espnowCanThrottle, espnowCanBrake, turnVal == 1 ? 1 : 0, turnVal == 2 ? 1 : 0);
+    }
+    else if (f.id == 0x249 && f.dlc >= 3)
+    {
+        uint8_t stalk = (f.data[2] >> 0) & 0x07;
+        if (stalk == 1 || stalk == 2)
+            espnowSetCanData(espnowCanSpeed, espnowCanThrottle, espnowCanBrake, 1, 0);
+        else if (stalk == 3 || stalk == 4)
+            espnowSetCanData(espnowCanSpeed, espnowCanThrottle, espnowCanBrake, 0, 1);
     }
 }
 
@@ -1977,6 +2001,20 @@ static void handleEspNowStatus()
     {
         j += ",\"paired\":null";
     }
+    j += ",\"scenarioRunning\":";
+    j += espnowScenarioActive ? "true" : "false";
+    j += ",\"scenarioStep\":";
+    j += String(espnowScenarioStep);
+    j += ",\"curSpeed\":";
+    j += String(espnowCanSpeed);
+    j += ",\"curThrottle\":";
+    j += String(espnowCanThrottle);
+    j += ",\"curBrake\":";
+    j += String(espnowCanBrake);
+    j += ",\"curTurnLeft\":";
+    j += String(espnowCanTurnLeft);
+    j += ",\"curTurnRight\":";
+    j += String(espnowCanTurnRight);
     j += "}";
     server.send(200, "application/json", j);
 }
@@ -2019,6 +2057,7 @@ static void handleEspNowPair()
     if (espnowPairDevice(mac))
     {
         dashLog("[ESPNOW] Paired with " + macStr);
+        espnowSendTestPackets();
         server.send(200, "application/json", "{\"ok\":true}");
     }
     else
@@ -2183,6 +2222,16 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/espnow_scan", HTTP_POST, handleEspNowScan);
     server.on("/espnow_pair", HTTP_POST, handleEspNowPair);
     server.on("/espnow_unpair", HTTP_POST, handleEspNowUnpair);
+    server.on("/espnow_test", HTTP_POST, []()
+    {
+        espnowSendTestPackets();
+        server.send(200, "application/json", "{\"ok\":true}");
+    });
+    server.on("/espnow_scenario", HTTP_POST, []()
+    {
+        espnowStartScenario();
+        server.send(200, "application/json", "{\"ok\":true}");
+    });
     server.on("/espnow_debug", HTTP_GET, []()
     {
         String r = "espnowInitialized=" + String(espnowInitialized ? "true" : "false") + "\n";
