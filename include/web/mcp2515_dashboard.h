@@ -26,6 +26,7 @@
 #endif
 #include "web/mcp2515_dashboard_ui.h"
 #include "can_translate.h"
+#include "espnow_broadcast.h"
 
 #ifndef DASH_SSID
 #error "Define -DDASH_SSID in build_flags (e.g. -DDASH_SSID=\\\"ADUnlock-1234\\\")"
@@ -386,6 +387,32 @@ static void mcpDashOnFrame(const CanFrame &f)
             recCount = idx + 1;
             if (recCount >= REC_CAP)
                 recActive = false;
+        }
+    }
+
+    if (f.dlc >= 8)
+    {
+        if (f.id == 0x116)
+        {
+            uint16_t raw = ((uint16_t)f.data[2] << 4) | (f.data[3] >> 4);
+            float mph = raw * 0.05f - 25.0f;
+            if (mph < 0)
+                mph = 0;
+            if (mph < 200)
+                espnowSetCanData(static_cast<uint16_t>(mph * 16.0f), espnowCanThrottle, espnowCanBrake, espnowCanTurnLeft, espnowCanTurnRight);
+        }
+        else if (f.id == 0x118)
+        {
+            uint8_t throttle = f.data[4] * 40 / 100;
+            if (throttle > 100)
+                throttle = 100;
+            uint8_t brake = ((f.data[2] >> 3) & 0x03) != 0 ? 1 : 0;
+            espnowSetCanData(espnowCanSpeed, throttle, brake, espnowCanTurnLeft, espnowCanTurnRight);
+        }
+        else if (f.id == 0x3E9)
+        {
+            uint8_t turnVal = f.data[1] & 0x03;
+            espnowSetCanData(espnowCanSpeed, espnowCanThrottle, espnowCanBrake, turnVal == 1 ? 1 : 0, turnVal == 2 ? 1 : 0);
         }
     }
 }
@@ -1921,6 +1948,92 @@ static void handleUpdateBeta()
     server.send(200, "application/json", j);
 }
 
+static void handleEspNowStatus()
+{
+    String j = "{\"scanning\":";
+    j += espnowScanning ? "true" : "false";
+    j += ",\"broadcasting\":";
+    j += espnowCanBroadcastEnabled ? "true" : "false";
+    j += ",\"initialized\":";
+    j += espnowInitialized ? "true" : "false";
+    j += ",\"discovered\":[";
+    for (int i = 0; i < espnowDiscoveredCount; i++)
+    {
+        if (i)
+            j += ",";
+        j += "{\"mac\":\"" + espnowGetDiscoveredMac(i) + "\"";
+        j += ",\"rssi\":" + String(espnowGetDiscoveredRssi(i));
+        j += ",\"paired\":" + String(espnowGetDiscoveredPaired(i) ? "true" : "false");
+        j += "}";
+    }
+    j += "]";
+    if (espnowHasPaired)
+    {
+        char macStr[18];
+        espnowMacToStr(espnowPairedMac, macStr);
+        j += ",\"paired\":{\"mac\":\"" + String(macStr) + "\"}";
+    }
+    else
+    {
+        j += ",\"paired\":null";
+    }
+    j += "}";
+    server.send(200, "application/json", j);
+}
+
+static void handleEspNowScan()
+{
+    if (server.hasArg("action"))
+    {
+        String action = server.arg("action");
+        if (action == "start")
+        {
+            espnowScanning = true;
+            espnowDiscoveredCount = 0;
+            dashLog("[ESPNOW] Scanning started");
+        }
+        else if (action == "stop")
+        {
+            espnowScanning = false;
+            dashLog("[ESPNOW] Scanning stopped");
+        }
+    }
+    server.send(200, "application/json", "{\"ok\":true,\"scanning\":" + String(espnowScanning ? "true" : "false") + "}");
+}
+
+static void handleEspNowPair()
+{
+    if (!server.hasArg("mac"))
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"MAC required\"}");
+        return;
+    }
+    String macStr = server.arg("mac");
+    uint8_t mac[6];
+    if (sscanf(macStr.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+               &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]) != 6)
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid MAC format\"}");
+        return;
+    }
+    if (espnowPairDevice(mac))
+    {
+        dashLog("[ESPNOW] Paired with " + macStr);
+        server.send(200, "application/json", "{\"ok\":true}");
+    }
+    else
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"Device not found\"}");
+    }
+}
+
+static void handleEspNowUnpair()
+{
+    espnowUnpairDevice();
+    dashLog("[ESPNOW] Unpaired");
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void webTask(void *)
 {
     for (;;)
@@ -2012,6 +2125,9 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
         dashLog("[WIFI] AP SSID is hidden");
     Serial.printf("[WIFI] AP: %s  IP: %s\n", apSSID, WiFi.softAPIP().toString().c_str());
 
+    espnowInit();
+    espnowCanBroadcastEnabled = true;
+
     dashInitHandlers();
     dashSwapHandler(hwMode);
     dashApplyFilters();
@@ -2063,6 +2179,11 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/auto_update", HTTP_GET, handleAutoUpdate);
     server.on("/auto_update", HTTP_POST, handleAutoUpdate);
 
+    server.on("/espnow_status", HTTP_GET, handleEspNowStatus);
+    server.on("/espnow_scan", HTTP_POST, handleEspNowScan);
+    server.on("/espnow_pair", HTTP_POST, handleEspNowPair);
+    server.on("/espnow_unpair", HTTP_POST, handleEspNowUnpair);
+
     server.begin();
     if (strlen(staSSID) > 0)
         dashScheduleSTAConnect(kDashStaBootDelayMs);
@@ -2085,6 +2206,7 @@ static void mcpDashboardLoop()
         canOnline = false;
         dashLog("[CAN] Bus OFFLINE (timeout)");
     }
+    espnowBroadcastCanData();
 }
 
 #endif
