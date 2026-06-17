@@ -112,6 +112,22 @@ inline bool formatCanTranslation(uint32_t id, const uint8_t *data, uint8_t dlc, 
         return true;
     }
 
+    // ── 0x145 (325) ESP_status ──
+    // data[4] bit1/2: brake switch (02→04踩下), data[5]: 踏板行程(1E基线, 重踩可达4F)
+    if (id == 325 || id == 0x145)
+    {
+        if (dlc < 6) return false;
+        uint8_t pedal = data[5];
+        bool brakeOn = (data[4] & 0x06) != 0 || pedal > 0x1E;
+        char tmp[64];
+        if (brakeOn)
+            snprintf(tmp, sizeof(tmp), "制动:踩下 踏板值:%d(0x%02X)", pedal, pedal);
+        else
+            snprintf(tmp, sizeof(tmp), "制动:未踩 待命值:%d(0x%02X)", pedal, pedal);
+        strlcpy(out, tmp, outLen);
+        return true;
+    }
+
     // ── 0x155 (341) ESP_B ──
     if (id == 341 || id == 0x155)
     {

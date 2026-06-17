@@ -169,6 +169,8 @@ static const char *decodeCanId(uint32_t id)
     {
     case 0x118:
         return "DI_systemStatus (档位/油门/动能回收)";
+    case 0x145:
+        return "ESP_status (制动开关/踏板行程)";
     case 0x155:
         return "ESP_B (车速/静止状态)";
     case 0x129:
