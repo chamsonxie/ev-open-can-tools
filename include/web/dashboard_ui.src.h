@@ -158,6 +158,8 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 .mux-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}
 .mux-tbl th{color:var(--tx3);font-size:10px;text-transform:uppercase;letter-spacing:.8px;
   text-align:left;padding:4px 8px;border-bottom:1px solid var(--bd);font-weight:500}
+.mux-tbl .cid-sort{cursor:pointer;user-select:none}
+.mux-tbl .cid-sort:hover{color:var(--tx)}
 .mux-tbl td{padding:5px 8px;color:var(--tx2);border-bottom:1px solid var(--bd)}
 .mux-tbl tr:last-child td{border-bottom:none}
 .mux-tbl td:first-child{color:var(--acc);font-weight:600}
@@ -431,7 +433,7 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
     </div>
     <div class="subsec-body">
       <div class="sniff-ctrl">
-        <input class="sniff-input" id="sniff-filter" placeholder="按ID或名称过滤" oninput="renderSnifferAndTrans()">
+        <input class="sniff-input" id="sniff-filter" placeholder="ID(0x), DBC ID或名称过滤" oninput="renderSnifferAndTrans()">
         <button class="sniff-btn" id="sniff-id-btn" onclick="toggleSniffIdMode()">线路ID</button>
         <button class="sniff-btn" id="sniff-pause-btn" onclick="togglePause()">暂停</button>
       </div>
@@ -492,6 +494,7 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
       <div class="subsec-title">CAN ID统计 <span class="title-help" onclick="return toggleHelp(this,event)" title="收集所有CAN ID并记录接收次数。计数上限9999，点击重置清零。">?</span></div>
       <div class="subsec-meta" style="display:flex;align-items:center;gap:8px">
         <span id="cid-count">0个ID</span>
+        <button onclick="exportCanIdCollector()" style="font-size:10px;padding:2px 8px;border:1px solid var(--bd2);border-radius:5px;background:transparent;color:var(--tx3);cursor:pointer;font-family:inherit">导出</button>
         <button onclick="resetCanIdCollector()" style="font-size:10px;padding:2px 8px;border:1px solid var(--bd2);border-radius:5px;background:transparent;color:var(--tx3);cursor:pointer;font-family:inherit">重置</button>
       </div>
     </div>
@@ -634,7 +637,7 @@ function updateGtwBadge(v){
   el.title=known?('GTW_autopilot: '+gtwAutopilotName(v)+' ('+v+')'):'GTW_autopilot: 尚未收到';
 }
 let state={hw:1,can:true,apGate:false,sp:0,spAuto:true,plgr:1,plgrmax:20,gate:null};
-let sniffPaused=false,sniffFrames=[];
+let sniffPaused=false,sniffFrames=[],sniffLastFilter='';
 let canIdCollectorData=[];
 let sniffShowDbcIds=localStorage.getItem('sniffIdMode')==='dbc';
 let otaFile=null;
@@ -994,11 +997,18 @@ function sniffBusLabel(){return state.hw===0?'PARTY':'CH';}
 function sniffWireId(id){return id&0x7FF;}
 function sniffDbcId(id){return sniffWireId(id)|sniffBusPrefix();}
 function sniffDisplayId(id){return sniffShowDbcIds?sniffDbcId(id):sniffWireId(id);}
+function parseFilterId(s){
+  if(typeof s!=='string'||!s.trim())return null;
+  s=s.trim().toLowerCase();
+  if(s.startsWith('0x')){const n=parseInt(s,16);return isNaN(n)?null:n;}
+  const n=parseInt(s,10);
+  return isNaN(n)?null:n;
+}
 function updateSniffIdToggle(){
   const b=$('sniff-id-btn'),bus=sniffBusLabel();
   b.textContent=sniffShowDbcIds?('DBC '+bus):'线路ID';
   b.title=sniffShowDbcIds?('显示带有'+bus+'前缀的DBC JSON ID'):('显示线路上的11位CAN ID');
-  $('sniff-filter').placeholder='按线路/DBC ID或名称过滤';
+  $('sniff-filter').placeholder='ID(0x), DBC ID或名称过滤';
 }
 function toggleSniffIdMode(){
   sniffShowDbcIds=!sniffShowDbcIds;
@@ -1137,8 +1147,8 @@ function renderSniffer(){
   const el=$('sniffer');
   let frames=sniffFrames;
   if(filter){
-    const fid=parseInt(filter);
-    if(!isNaN(fid))frames=frames.filter(f=>sniffWireId(f.id)===fid||sniffDbcId(f.id)===fid);
+    const fid=parseFilterId(filter);
+    if(fid!==null)frames=frames.filter(f=>sniffWireId(f.id)===fid||sniffDbcId(f.id)===fid);
     else frames=frames.filter(f=>f.name&&f.name.toLowerCase().includes(filter));
   }
   $('sniff-count').textContent=frames.length+' 帧';
@@ -1165,8 +1175,8 @@ function renderTranslated(){
   let frames=sniffFrames||[];
   const filter=$('sniff-filter')?$('sniff-filter').value.trim().toLowerCase():'';
   if(filter){
-    const fid=parseInt(filter);
-    if(!isNaN(fid))frames=frames.filter(f=>sniffWireId(f.id)===fid||sniffDbcId(f.id)===fid);
+    const fid=parseFilterId(filter);
+    if(fid!==null)frames=frames.filter(f=>sniffWireId(f.id)===fid||sniffDbcId(f.id)===fid);
     else frames=frames.filter(f=>(f.name&&f.name.toLowerCase().includes(filter))||(f.trans&&f.trans.toLowerCase().includes(filter)));
   }
   $('trans-count').textContent=frames.length+' 帧';
@@ -1189,6 +1199,19 @@ function renderTranslated(){
 
 function renderSnifferAndTrans(){ renderSniffer(); renderTranslated(); }
 
+let cidSortCol=-1;
+let cidSortAsc=true;
+
+function sortCanIdCollector(col){
+  if(cidSortCol===col){cidSortAsc=!cidSortAsc;}else{cidSortCol=col;cidSortAsc=true;}
+  renderCanIdCollector();
+}
+
+function fmtCidSortArrow(col){
+  if(cidSortCol!==col)return '';
+  return cidSortAsc?' &#9650;':' &#9660;';
+}
+
 function renderCanIdCollector(){
   const el=$('cid-list');
   if(!el)return;
@@ -1198,8 +1221,18 @@ function renderCanIdCollector(){
     return;
   }
   $('cid-count').textContent=canIdCollectorData.length+'个ID';
-  el.innerHTML='<table class="mux-tbl"><tr><th>十进制ID</th><th>十六进制ID</th><th>接收次数</th></tr>'+
-    canIdCollectorData.map(e=>'<tr><td>'+e.id+'</td><td>'+(e.hex||'0x'+toHex(e.id,3))+'</td><td>'+e.count+'</td></tr>').join('')+'</table>';
+  let data=canIdCollectorData;
+  if(cidSortCol>=0){
+    const sorted=[...data];
+    const cmp=cidSortCol===2?(a,b)=>a.count-b.count:(a,b)=>a.id-b.id;
+    sorted.sort(cidSortAsc?cmp:(a,b)=>cmp(b,a));
+    data=sorted;
+  }
+  el.innerHTML='<table class="mux-tbl"><tr>'+
+    '<th class="cid-sort" onclick="sortCanIdCollector(0)">十进制ID'+fmtCidSortArrow(0)+'</th>'+
+    '<th class="cid-sort" onclick="sortCanIdCollector(1)">十六进制ID'+fmtCidSortArrow(1)+'</th>'+
+    '<th class="cid-sort" onclick="sortCanIdCollector(2)">接收次数'+fmtCidSortArrow(2)+'</th></tr>'+
+    data.map(e=>'<tr><td>'+e.id+'</td><td>'+(e.hex||'0x'+toHex(e.id,3))+'</td><td>'+e.count+'</td></tr>').join('')+'</table>';
 }
 
 async function pollCanIdCollector(){
@@ -1207,6 +1240,15 @@ async function pollCanIdCollector(){
     if(!dashboardStatusOk)return;
     try{const d=await fetchPollJson('/can_ids',2500);canIdCollectorData=d.ids||[];renderCanIdCollector();}catch(e){}
   });
+}
+
+function exportCanIdCollector(){
+  const a=document.createElement('a');
+  a.href='/can_ids_export';
+  a.download='can_ids.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 async function resetCanIdCollector(){
@@ -1218,7 +1260,26 @@ async function resetCanIdCollector(){
 async function pollSniffer(){
   return runPoll('frames',async()=>{
     if(sniffPaused||!dashboardStatusOk)return;
-    try{const d=await fetchPollJson('/frames',2500);sniffFrames=d.frames||[];renderSnifferAndTrans();}catch(e){}
+    try{
+      const d=await fetchPollJson('/frames',2500);
+      const raw=d.frames||[];
+      const filter=$('sniff-filter').value.trim().toLowerCase();
+      const fid=filter?parseFilterId(filter):null;
+      if(!filter||fid===null){
+        sniffFrames=raw;
+        sniffLastFilter='';
+      }else{
+        const matching=raw.filter(f=>sniffWireId(f.id)===fid||sniffDbcId(f.id)===fid);
+        if(sniffLastFilter!==filter){
+          sniffFrames=matching;
+          sniffLastFilter=filter;
+        }else{
+          const tsSet=new Set(sniffFrames.map(f=>f.ts));
+          sniffFrames=[...sniffFrames,...matching.filter(f=>!tsSet.has(f.ts))].slice(-30);
+        }
+      }
+      renderSnifferAndTrans();
+    }catch(e){}
   });
 }
 

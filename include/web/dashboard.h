@@ -186,17 +186,9 @@ static const char *decodeCanId(uint32_t id)
     }
 }
 
-// Sniff whitelist: only the 7 selected CAN IDs
-static constexpr uint32_t kDashboardSniffIds[] = {
-    0x118, // DI_systemStatus: 档位/油门/动能回收
-    0x155, // ESP_B: 车速/静止状态
-    0x129, // SCCM_steeringAngleSensor: 方向盘转角
-    0x311, // UI_warning: 安全带/转向灯/车门
-    0x39B, // DAS_status: 盲区/碰撞预警
-    0x39D, // IBST_status: 制动踏板
-    0x3F5, // VCFRONT_lighting: 前部灯光
-};
-static constexpr uint8_t kDashboardSniffIdCount = sizeof(kDashboardSniffIds) / sizeof(kDashboardSniffIds[0]);
+// Sniff: accept all CAN IDs (empty filter = accept all)
+static constexpr uint32_t kDashboardSniffIds[] = {};
+static constexpr uint8_t kDashboardSniffIdCount = 0;
 
 // CAN ID collector — tracks every observed CAN ID and its receive count
 #define CAN_ID_COLLECTOR_MAX 500
@@ -537,10 +529,8 @@ static void handleStatus()
     j += mcpEflg;
     j += ",\"up\":";
     j += (millis() - startMs) / 1000;
-#if defined(HW4)
-    j += ",\"hw\":2";
-#elif defined(LEGACY)
-    j += ",\"hw\":0";
+#ifdef DASH_DEFAULT_HW
+    j += ",\"hw\":" + String(DASH_DEFAULT_HW);
 #else
     j += ",\"hw\":1";
 #endif
@@ -641,6 +631,20 @@ static void handleCanIds()
     }
     j += "]}";
     server.send(200, "application/json", j);
+}
+
+static void handleCanIdsExport()
+{
+    String csv = "\xEF\xBB\xBF"; // BOM for Excel UTF-8
+    csv += "CAN ID (dec),CAN ID (hex),Count\n";
+    for (int i = 0; i < canIdEntryCount; i++)
+    {
+        csv += String(canIdEntries[i].id) + ",";
+        csv += "0x" + String(canIdEntries[i].id, HEX) + ",";
+        csv += String(canIdEntries[i].count) + "\n";
+    }
+    server.sendHeader("Content-Disposition", "attachment; filename=\"can_ids.csv\"");
+    server.send(200, "text/csv", csv);
 }
 
 static void handleCanIdsReset()
@@ -1877,6 +1881,7 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/log", HTTP_GET, handleLog);
     server.on("/reset_stats", HTTP_POST, handleResetStats);
     server.on("/can_ids", HTTP_GET, handleCanIds);
+    server.on("/can_ids_export", HTTP_GET, handleCanIdsExport);
     server.on("/can_ids_reset", HTTP_POST, handleCanIdsReset);
     server.on("/rec_start", HTTP_POST, handleRecStart);
     server.on("/rec_stop", HTTP_POST, handleRecStop);

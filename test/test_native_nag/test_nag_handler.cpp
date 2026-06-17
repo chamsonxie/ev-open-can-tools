@@ -14,7 +14,8 @@ void tearDown() {}
 
 void test_nag_filter_ids_count()
 {
-    TEST_ASSERT_EQUAL_UINT8(7, handler.filterIdCount());
+    TEST_ASSERT_EQUAL_UINT8(0, handler.filterIdCount());
+    TEST_ASSERT_NULL(handler.filterIds());
 }
 
 int main()
