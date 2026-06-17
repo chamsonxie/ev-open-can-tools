@@ -18,23 +18,7 @@
 #define PIN_LED 2
 #endif
 
-#if defined(ESP32_DASHBOARD)
-#if DASH_DEFAULT_HW == 0
-using SelectedHandler = LegacyHandler;
-#elif DASH_DEFAULT_HW == 2
-using SelectedHandler = HW4Handler;
-#else
-using SelectedHandler = HW3Handler;
-#endif
-#elif defined(HW4)
-using SelectedHandler = HW4Handler;
-#elif defined(HW3)
-using SelectedHandler = HW3Handler;
-#elif defined(LEGACY)
-using SelectedHandler = LegacyHandler;
-#else
-#error "Define HW4, HW3, or LEGACY in build_flags"
-#endif
+using SelectedHandler = MyCanHandler;
 
 static std::unique_ptr<CanDriver> appDriver;
 static std::unique_ptr<CarManagerBase> appHandler;

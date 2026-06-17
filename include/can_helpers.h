@@ -1,39 +1,44 @@
 #pragma once
 
 #include "can_frame_types.h"
+#include <cstdint>
 
-inline uint8_t readMuxID(const CanFrame &frame)
+// Intel (little-endian) signal extraction
+inline uint64_t extractIntel(const uint8_t *data, int start, int len)
 {
-    return frame.data[0] & 0x07;
+    uint64_t v = 0;
+    for (int i = 0; i < len; i++)
+    {
+        int b = start + i;
+        if (data[b / 8] & (1 << (b % 8)))
+            v |= (1ULL << i);
+    }
+    return v;
 }
 
-inline bool isADSelectedInUI(const CanFrame &frame)
+// Motorola (big-endian) signal extraction
+inline uint64_t extractMotorola(const uint8_t *data, int start, int len)
 {
-    return (frame.data[4] >> 5) & 0x01;
+    uint64_t v = 0;
+    for (int i = 0; i < len; i++)
+    {
+        int m = start + i;
+        int physBit = (m / 8) * 8 + (7 - (m % 8));
+        if (data[physBit / 8] & (1 << (physBit % 8)))
+            v |= (1ULL << i);
+    }
+    return v;
 }
 
-inline uint8_t readGTWAutopilot(const CanFrame &frame)
+inline int64_t extractSigned(uint64_t raw, int len)
 {
-    return static_cast<uint8_t>((frame.data[5] >> 2) & 0x07);
+    if (raw & (1ULL << (len - 1)))
+        return (int64_t)(raw | (~0ULL << len));
+    return (int64_t)raw;
 }
 
-inline uint8_t readDASAutopilotStatus(const CanFrame &frame)
-{
-    return frame.data[0] & 0x0F;
-}
-
-inline bool isDASAutopilotActive(uint8_t status)
-{
-    return status >= 3 && status <= 5;
-}
-
-inline uint8_t readVehicleGear(const CanFrame &frame)
-{
-    return static_cast<uint8_t>((frame.data[7] >> 3) & 0x07);
-}
-
-// DI_systemStatus（CAN ID 280 / 0x118）DI_gear：字节2的第5-7位
-// 值：0=无效, 1=P, 2=R, 3=N, 4=D, 7=SNA
+// 0x118 DI_systemStatus: byte 2 bits 5-7 = DI_gear
+// 0=INVALID, 1=P, 2=R, 3=N, 4=D, 7=SNA
 inline uint8_t readDIGear(const CanFrame &frame)
 {
     return static_cast<uint8_t>((frame.data[2] >> 5) & 0x07);
@@ -41,45 +46,18 @@ inline uint8_t readDIGear(const CanFrame &frame)
 
 inline bool isVehicleParked(uint8_t gear)
 {
-    // 将真正的驻车（1）视为已驻车。同时将无效（0）和SNA（7）视为已驻车：
-    // 当DI休眠时（例如车辆锁闭且哨兵模式开启），它报告SNA，
-    // 我们希望AP注入门打开，以便在冷接近时运行召唤解锁注入。
-    // 行驶状态（R=2, N=3, D=4）和未知的中间值不被视为已驻车。
     return gear == 0 || gear == 1 || gear == 7;
-}
-
-inline const char *describeGTWAutopilot(uint8_t value)
-{
-    switch (value)
-    {
-    case 0:
-        return "NONE";
-    case 1:
-        return "HIGHWAY";
-    case 2:
-        return "ENHANCED";
-    case 3:
-        return "SELF_DRIVING";
-    case 4:
-        return "BASIC";
-    default:
-        return "UNKNOWN";
-    }
 }
 
 inline void setBit(CanFrame &frame, int bit, bool value)
 {
     if (bit < 0 || bit >= 64)
-        return; // 边界保护：CanFrame.data为8字节
+        return;
     int byteIndex = bit / 8;
     int bitIndex = bit % 8;
     uint8_t mask = static_cast<uint8_t>(1U << bitIndex);
     if (value)
-    {
         frame.data[byteIndex] |= mask;
-    }
     else
-    {
         frame.data[byteIndex] &= static_cast<uint8_t>(~mask);
-    }
 }

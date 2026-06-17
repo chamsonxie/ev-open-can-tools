@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
-"""Tesla Model Y (HW3/HW4) CAN 录制翻译器
-使用项目内 opendbc + 固件已知的 bit 布局，将 can-records/*.csv 翻译为简洁中文。
+"""Tesla CAN 录制翻译器 — my-dbc-sign.csv 定制版
 
-重点信号（固件实际使用的）：
-- 档位 (280 DI_systemStatus byte2 bits5-7)
-- 油门踏板 (280 byte4 * 0.4 %)
-- 刹车状态
-- 驻车判断（P / SNA / 无效）
-- 召唤请求 (1016 spr, 1021 mux)
-- Autopilot 状态 (2047 mux=2 GTW_autopilot)
-- ACA 位（autonomy control active，用于 summon 门控）
+支持的 7 个 CAN ID（含所有信号）:
+  0x118 DI_systemStatus:  档位/油门/动能回收
+  0x155 ESP_B:            车速/静止标志
+  0x129 SCCM_steering:    方向盘转角/角速度
+  0x311 UI_warning:       安全带/转向灯/车门/远光
+  0x39B DAS_status:       盲区/碰撞预警/车道偏离/超速警告
+  0x39D IBST_status:      制动踏板行程/制动状态
+  0x3F5 VCFRONT_lighting: 全部23个灯光信号
 
-注意：当前录制文件仅包含 280/1016/1021/2047，没有车速信号（常见车速信号在 0x116 DI_torque2 / 0x155 ESP_B 等）。
-因此输出中“车速”会标注为“(录制中未包含)”。
-
-用法示例：
+用法:
   python3 scripts/translate_can_records.py
-  python3 scripts/translate_can_records.py --files "can-records/can_recording*.csv" --changes-only
+  python3 scripts/translate_can_records.py --files "can-records/*.csv" --all-frames
 """
 
 import argparse
@@ -26,114 +22,271 @@ import os
 import sys
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-# 与 include/can_helpers.h / handlers.h 一致的映射
-GEAR_MAP = {
-    0: "无效",
-    1: "P",
-    2: "R",
-    3: "N",
-    4: "D",
-    7: "SNA",
+GEAR_MAP = {0: "无效", 1: "P", 2: "R", 3: "N", 4: "D", 7: "SNA"}
+LIGHT_MAP = {0: "关", 1: "开", 2: "故障", 3: "无效"}
+REQ_MAP = {0: "关", 1: "低有效", 2: "高有效"}
+HAZARD_REQ_MAP = {
+    0: "无", 1: "按钮", 2: "闭锁", 3: "解锁",
+    4: "误锁", 5: "碰撞", 6: "报警", 7: "DAS", 8: "诊断",
 }
+BLIND_SPOT_MAP = {0: "无警告", 1: "1级", 2: "2级", 3: "无效"}
+LANE_DEP_MAP = {0: "无", 1: "左", 2: "右", 3: "左严重", 4: "右严重"}
+SIDE_COLL_MAP = {0: "无", 1: "左", 2: "右", 3: "左右"}
+FCW_MAP = {0: "无", 1: "预警", 3: "无效"}
+BRAKE_APPLY_MAP = {0: "未初始化", 1: "未制动", 2: "制动中", 3: "故障"}
 
-AP_MAP = {
-    0: "NONE",
-    1: "HIGHWAY",
-    2: "ENHANCED",
-    3: "SELF_DRIVING",
-    4: "BASIC",
-}
-
-BRAKE_MAP = {0: "OFF", 1: "ON", 2: "INVALID"}
-
-# 固件中用于召唤门控的关键位
-# 280: byte6 bit2 = ACA
-# 1016: (data[3]>>4)&0xF = spr（非0表示有召唤请求）
-# 1021: byte0 & 0x07 = mux
 
 def _b(row: Dict[str, str], i: int) -> int:
     return int(row.get(f"b{i}", 0))
 
-def decode_280(row: Dict[str, str]) -> Dict[str, Any]:
-    b2 = _b(row, 2)
-    b4 = _b(row, 4)
-    b6 = _b(row, 6)
-    gear_raw = (b2 >> 5) & 0x07
-    brake_raw = (b2 >> 3) & 0x03
-    sys_state = b2 & 0x07
-    accel = b4 * 0.4
-    aca = bool(b6 & 0x04)
+
+def _extract_intel(data, start, length):
+    """Extract bits in Intel (little-endian) layout."""
+    v = 0
+    for i in range(length):
+        b = start + i
+        if data[b // 8] & (1 << (b % 8)):
+            v |= (1 << i)
+    return v
+
+
+def _extract_motorola(data, start, length):
+    """Extract bits in Motorola (big-endian) layout."""
+    v = 0
+    for i in range(length):
+        m = start + i
+        physBit = (m // 8) * 8 + (7 - (m % 8))
+        if data[physBit // 8] & (1 << (physBit % 8)):
+            v |= (1 << i)
+    return v
+
+
+def bytes_from_row(row, n=8):
+    return [_b(row, i) for i in range(n)]
+
+
+def decode_118(row):
+    """0x118 DI_systemStatus"""
+    b = bytes_from_row(row)
+    if len(b) < 5:
+        return {}
+    gear_raw = (b[2] >> 5) & 0x07
+    accel = b[4] * 0.4
+    regen = (b[3] >> 2) & 0x01
     parked = gear_raw in (0, 1, 7)
     return {
         "gear": GEAR_MAP.get(gear_raw, str(gear_raw)),
         "gear_raw": gear_raw,
         "parked": parked,
         "accel_pct": round(accel, 1),
-        "brake": BRAKE_MAP.get(brake_raw, str(brake_raw)),
-        "brake_raw": brake_raw,
-        "sys_state": sys_state,
-        "aca": aca,
+        "regen": regen,
     }
 
-def decode_1016(row: Dict[str, str]) -> Dict[str, Any]:
-    b3 = _b(row, 3)
-    spr = (b3 >> 4) & 0x0F
-    return {"summon_req": spr != 0, "spr_raw": spr}
 
-def decode_1021(row: Dict[str, str]) -> Dict[str, Any]:
-    b0 = _b(row, 0)
-    mux = b0 & 0x07
+def decode_155(row):
+    """0x155 ESP_B"""
+    b = bytes_from_row(row)
+    if len(b) < 6:
+        return {}
+    rawSpeed = _extract_intel(b, 42, 10)
+    kph = -1 if rawSpeed == 1023 else rawSpeed * 0.5
+    still = _extract_intel(b, 41, 1) != 0
     return {
-        "mux": mux,
-        "b3": _b(row, 3),
-        "b5": _b(row, 5),
-        "b6": _b(row, 6),
-        "b7": _b(row, 7),
+        "speed_kph": round(kph, 1) if kph >= 0 else None,
+        "standstill": still,
     }
 
-def decode_2047(row: Dict[str, str]) -> Dict[str, Any]:
-    b0 = _b(row, 0)
-    b5 = _b(row, 5)
-    mux = b0 & 0x07
-    if mux != 2:
-        return {"mux": mux}
-    ap_raw = (b5 >> 2) & 0x07
-    return {"mux": 2, "gtw_ap": AP_MAP.get(ap_raw, str(ap_raw)), "gtw_ap_raw": ap_raw}
+
+def decode_129(row):
+    """0x129 SCCM_steeringAngleSensor"""
+    b = bytes_from_row(row)
+    if len(b) < 6:
+        return {}
+    angle = _extract_intel(b, 16, 14) * 0.1 - 819.2
+    speed = _extract_intel(b, 32, 14) * 0.5 - 4096.0
+    return {
+        "steering_angle": round(angle, 1),
+        "steering_speed": round(speed),
+    }
+
+
+def decode_311(row):
+    """0x311 UI_warning"""
+    b = bytes_from_row(row)
+    if len(b) < 7:
+        return {}
+    buckle = _extract_motorola(b, 13, 1) != 0
+    leftBlink = _extract_motorola(b, 25, 2)
+    rightBlink = _extract_intel(b, 26, 2)
+    door = _extract_motorola(b, 28, 1) != 0
+    hiBeam = _extract_motorola(b, 50, 1) != 0
+    return {
+        "buckle": "扣" if buckle else "未扣",
+        "left_blinker": leftBlink,
+        "right_blinker": rightBlink,
+        "door_open": door,
+        "high_beam": hiBeam,
+    }
+
+
+def decode_39b(row):
+    """0x39B DAS_status"""
+    b = bytes_from_row(row)
+    if len(b) < 5:
+        return {}
+    bsL = _extract_intel(b, 4, 2)
+    bsR = _extract_intel(b, 6, 2)
+    ssw = _extract_intel(b, 13, 1)
+    fcw = _extract_intel(b, 22, 2)
+    scw = _extract_intel(b, 32, 2)
+    ldw = _extract_intel(b, 37, 3)
+    return {
+        "blind_spot_l": BLIND_SPOT_MAP.get(bsL, str(bsL)),
+        "blind_spot_r": BLIND_SPOT_MAP.get(bsR, str(bsR)),
+        "fcw": FCW_MAP.get(fcw, str(fcw)),
+        "scw": SIDE_COLL_MAP.get(scw, str(scw)),
+        "ldw": LANE_DEP_MAP.get(ldw, str(ldw)),
+        "suppress_speed_warning": ssw,
+    }
+
+
+def decode_39d(row):
+    """0x39D IBST_status"""
+    b = bytes_from_row(row)
+    if len(b) < 3:
+        return {}
+    brakeApply = _extract_intel(b, 16, 2)
+    rodRaw = _extract_intel(b, 21, 12)
+    rodMM = rodRaw * 0.015625 - 5.0
+    return {
+        "brake_apply": BRAKE_APPLY_MAP.get(brakeApply, str(brakeApply)),
+        "brake_rod_mm": round(rodMM, 1),
+    }
+
+
+def decode_3f5(row):
+    """0x3F5 VCFRONT_lighting (23 signals)"""
+    b = bytes_from_row(row)
+    if len(b) < 8:
+        return {}
+    return {
+        "indicator_left": REQ_MAP.get(b[0] & 0x03, "?"),
+        "indicator_right": REQ_MAP.get((b[0] >> 2) & 0x03, "?"),
+        "hazard_req": HAZARD_REQ_MAP.get((b[0] >> 4) & 0x0F, "?"),
+        "ambient_brightness": b[1],
+        "switch_brightness": b[2],
+        "approach_light": (b[3] >> 1) & 0x01,
+        "see_you_home": (b[3] >> 2) & 0x01,
+        "hazard_backlight": (b[3] >> 3) & 0x01,
+        "low_beam_l": LIGHT_MAP.get((b[3] >> 4) & 0x03, "?"),
+        "low_beam_r": LIGHT_MAP.get((b[3] >> 6) & 0x03, "?"),
+        "high_beam_l": LIGHT_MAP.get(b[4] & 0x03, "?"),
+        "high_beam_r": LIGHT_MAP.get((b[4] >> 2) & 0x03, "?"),
+        "drl_l": LIGHT_MAP.get((b[4] >> 4) & 0x03, "?"),
+        "drl_r": LIGHT_MAP.get((b[4] >> 6) & 0x03, "?"),
+        "fog_l": LIGHT_MAP.get(b[5] & 0x03, "?"),
+        "fog_r": LIGHT_MAP.get((b[5] >> 2) & 0x03, "?"),
+        "side_repeater_l": LIGHT_MAP.get((b[5] >> 6) & 0x03, "?"),
+        "side_repeater_r": LIGHT_MAP.get(b[6] & 0x03, "?"),
+        "turn_signal_l": LIGHT_MAP.get((b[6] >> 2) & 0x03, "?"),
+        "turn_signal_r": LIGHT_MAP.get((b[6] >> 4) & 0x03, "?"),
+        "park_l": LIGHT_MAP.get((b[6] >> 6) & 0x03, "?"),
+        "park_r": LIGHT_MAP.get(b[7] & 0x03, "?"),
+        "high_beam_switch": (b[7] >> 2) & 0x01,
+    }
+
 
 def fmt_state(s: Dict[str, Any]) -> str:
     parts = []
-    # 按用户要求风格：车速：xxx， 档位：xx ， ...
-    # 本次录制未包含车速信号（常见车速在 0x116/0x155 等）
-    parts.append("车速：(录制中未包含)")
+
+    if "speed_kph" in s:
+        speed = s.get("speed_kph")
+        if speed is not None:
+            still = " 静止" if s.get("standstill") else ""
+            parts.append(f"车速:{speed}km/h{still}")
+        else:
+            parts.append("车速:无效")
+
     if "gear" in s:
-        p = "驻车" if s.get("parked") else "非驻车"
-        parts.append(f"档位：{s['gear']}（{p}）")
+        parts.append(f"档位:{s['gear']}{' 驻车' if s.get('parked') else ' 非驻车'}")
     if "accel_pct" in s:
-        parts.append(f"油门：{s['accel_pct']}%")
-    if "brake" in s:
-        parts.append(f"刹车：{s['brake']}")
-    if "aca" in s:
-        parts.append(f"ACA：{'是' if s['aca'] else '否'}")
-    if "summon_req" in s:
-        parts.append(f"召唤请求：{'是' if s['summon_req'] else '否'}")
-    if "gtw_ap" in s:
-        parts.append(f"AP状态：{s['gtw_ap']}")
-    if "mux" in s and s.get("mux") is not None and "gtw_ap" not in s:
-        parts.append(f"1021_mux：{s['mux']}")
-    return "，".join(parts)
+        parts.append(f"油门:{s['accel_pct']}%")
+    if "regen" in s:
+        parts.append(f"动能回收:{'回收中' if s['regen'] else '关闭'}")
+
+    if "steering_angle" in s:
+        parts.append(f"方向盘:{s['steering_angle']}°")
+    if "steering_speed" in s:
+        parts.append(f"角速度:{s['steering_speed']}°/s")
+
+    if "buckle" in s:
+        parts.append(f"安全带:{s['buckle']}")
+    if "left_blinker" in s:
+        parts.append(f"左转:{'闪烁' if s['left_blinker'] else '关'}")
+    if "right_blinker" in s:
+        parts.append(f"右转:{'闪烁' if s['right_blinker'] else '关'}")
+    if "door_open" in s:
+        parts.append(f"门:{'开' if s['door_open'] else '关'}")
+    if "high_beam" in s:
+        parts.append(f"远光:{'开' if s['high_beam'] else '关'}")
+
+    if "blind_spot_l" in s:
+        parts.append(f"盲区:L={s['blind_spot_l']} R={s['blind_spot_r']}")
+    if "fcw" in s:
+        parts.append(f"前碰:{s['fcw']}")
+    if "scw" in s:
+        parts.append(f"侧碰:{s['scw']}")
+    if "ldw" in s:
+        parts.append(f"车道偏离:{s['ldw']}")
+    if "suppress_speed_warning" in s:
+        parts.append(f"超速警告:{'抑制' if s['suppress_speed_warning'] else '正常'}")
+
+    if "brake_apply" in s:
+        parts.append(f"制动:{s['brake_apply']}")
+    if "brake_rod_mm" in s:
+        parts.append(f"踏板行程:{s['brake_rod_mm']}mm")
+
+    if "turn_signal_l" in s and "turn_signal_r" in s:
+        parts.append(f"转向灯状态:L={s['turn_signal_l']} R={s['turn_signal_r']}")
+    if "low_beam_l" in s:
+        parts.append(f"近光:L={s['low_beam_l']} R={s['low_beam_r']}")
+    if "high_beam_l" in s:
+        parts.append(f"远光:L={s['high_beam_l']} R={s['high_beam_r']}")
+    if "drl_l" in s:
+        parts.append(f"DRL:L={s['drl_l']} R={s['drl_r']}")
+    if "park_l" in s:
+        parts.append(f"驻车灯:L={s['park_l']} R={s['park_r']}")
+    if "hazard_req" in s and s['hazard_req'] != "无":
+        parts.append(f"危险灯请求:{s['hazard_req']}")
+
+    return "  ".join(parts) if parts else "(无解析数据)"
+
 
 def significant_keys(s: Dict[str, Any]) -> Tuple:
-    # 用于变化检测的关键字段（忽略原始 raw 值和次要 mux）
     return (
         s.get("gear_raw"),
         s.get("parked"),
-        round(s.get("accel_pct", 0), 1) if "accel_pct" in s else None,
-        s.get("brake_raw"),
-        s.get("aca"),
-        s.get("summon_req"),
-        s.get("gtw_ap_raw"),
-        s.get("mux") if s.get("mux") != 2 else None,  # 仅当非 AP mux 时关注
+        s.get("speed_kph"),
+        s.get("standstill"),
+        s.get("door_open"),
+        s.get("high_beam"),
+        s.get("brake_apply"),
+        s.get("steering_angle"),
+        s.get("left_blinker"),
+        s.get("right_blinker"),
     )
+
+
+DECODERS = {
+    0x118: decode_118,
+    0x155: decode_155,
+    0x129: decode_129,
+    0x311: decode_311,
+    0x39B: decode_39b,
+    0x39D: decode_39d,
+    0x3F5: decode_3f5,
+}
+
 
 def process_csv(path: str, changes_only: bool = True, min_interval_ms: int = 0) -> List[str]:
     lines: List[str] = []
@@ -152,17 +305,11 @@ def process_csv(path: str, changes_only: bool = True, min_interval_ms: int = 0) 
                 if base_ts is None:
                     base_ts = ts
                 iid = int(row.get("id", 0))
-                if iid == 0x118:
-                    dec = decode_280(row)
-                elif iid == 0x3f8:
-                    dec = decode_1016(row)
-                elif iid == 0x3fd:
-                    dec = decode_1021(row)
-                elif iid == 0x7ff:
-                    dec = decode_2047(row)
-                else:
+                decoder = DECODERS.get(iid)
+                if decoder is None:
                     continue
 
+                dec = decoder(row)
                 sig = significant_keys(dec)
                 if changes_only and sig == last_sig:
                     continue
@@ -174,7 +321,7 @@ def process_csv(path: str, changes_only: bool = True, min_interval_ms: int = 0) 
                 if not state_str:
                     continue
 
-                line = f"[{rel_ms:7d} ms] {state_str}"
+                line = f"[{rel_ms:7d} ms] 0x{iid:03X} {state_str}"
                 lines.append(line)
                 last_sig = sig
                 last_t = ts
@@ -182,15 +329,16 @@ def process_csv(path: str, changes_only: bool = True, min_interval_ms: int = 0) 
         lines.append(f"解析失败: {e}")
     return lines
 
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Tesla CAN 录制信号翻译器（中文简洁输出）")
+    ap = argparse.ArgumentParser(description="Tesla CAN 录制翻译器（my-dbc-sign 定制版）")
     ap.add_argument(
         "--files",
         default="can-records/can_recording*.csv",
-        help="录制 CSV 路径 glob（默认 can-records/can_recording*.csv）",
+        help="录制 CSV 路径 glob",
     )
     ap.add_argument("--changes-only", action="store_true", default=True, help="仅在关键状态变化时输出（默认开启）")
-    ap.add_argument("--all-frames", dest="changes_only", action="store_false", help="输出每个可解析帧（会很长）")
+    ap.add_argument("--all-frames", dest="changes_only", action="store_false", help="输出每个可解析帧")
     ap.add_argument("--interval", type=int, default=0, help="最小输出间隔（毫秒），0 表示不限制")
     args = ap.parse_args()
 
@@ -199,9 +347,8 @@ def main() -> None:
         print(f"未找到录制文件: {args.files}", file=sys.stderr)
         sys.exit(1)
 
-    print("Tesla Model Y CAN 信号翻译器")
-    print("来源: opendbc + 固件 bit 布局 (280=DI_systemStatus, 1016/1021=自泊车, 2047=GTW_AP)")
-    print("注意: 录制仅含 280/1016/1021/2047，无车速帧（常见车速信号 0x116 DI_torque2 / 0x155 ESP_B）。\n")
+    print("Tesla CAN 信号翻译器（my-dbc-sign 定制版）")
+    print("支持的 7 个 CAN ID: 0x118/155/129/311/39B/39D/3F5\n")
 
     for f in files:
         print(f"=== {os.path.basename(f)} ===")
@@ -212,6 +359,7 @@ def main() -> None:
             for ln in out:
                 print("  " + ln)
         print()
+
 
 if __name__ == "__main__":
     main()
