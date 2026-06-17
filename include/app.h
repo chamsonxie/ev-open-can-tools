@@ -28,7 +28,7 @@ static volatile bool frameReady = true;
 static void canISR() { frameReady = true; }
 
 #if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD)
-#include "web/mcp2515_dashboard.h"
+#include "web/dashboard.h"
 #endif
 
 template <typename Driver>

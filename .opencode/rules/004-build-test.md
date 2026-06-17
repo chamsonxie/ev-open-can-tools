@@ -63,7 +63,7 @@ pio test -e native -e native_dashboard -e native_nag \
 ## Lint Command
 
 ```bash
-git ls-files '*.cpp' '*.h' '*.hpp' ':!:include/web/mcp2515_dashboard_ui.h' \
+git ls-files '*.cpp' '*.h' '*.hpp' ':!:include/web/dashboard_ui.h' \
   | xargs -r clang-format --dry-run --Werror --style=file
 ```
 

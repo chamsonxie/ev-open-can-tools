@@ -10,10 +10,8 @@ Import("env")
 
 
 DRIVER_DEFINES = (
-    "DRIVER_MCP2515",
     "DRIVER_SAME51",
     "DRIVER_TWAI",
-    "DRIVER_ESP32_EXT_MCP2515",
 )
 VEHICLE_DEFINES = ("LEGACY", "HW3", "HW4")
 OPTIONAL_DEFINES = (
@@ -137,7 +135,7 @@ def _project_option_defines(env_obj):
 
 def _regenerate_dashboard(project_dir):
     script = project_dir / "scripts" / "minify_dashboard.py"
-    src = project_dir / "include" / "web" / "mcp2515_dashboard_ui.src.h"
+    src = project_dir / "include" / "web" / "dashboard_ui.src.h"
     if not script.exists() or not src.exists():
         return
     try:

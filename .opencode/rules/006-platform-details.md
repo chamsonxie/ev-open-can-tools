@@ -1,9 +1,9 @@
 # 006 — Platform-Specific Details
 
-## Dashboard Web UI (`include/web/mcp2515_dashboard.h`)
+## Dashboard Web UI (`include/web/dashboard.h`)
 
 - HTTP server with routes for: WiFi, plugins, OTA, sniffer, recorder, settings, backup/restore
-- UI HTML is minified + gzipped into `include/web/mcp2515_dashboard_ui.h`
+- UI HTML is minified + gzipped into `include/web/dashboard_ui.h`
 - To regenerate: `python scripts/minify_dashboard.py`
 - Dashboard is only compiled with `-DESP32_DASHBOARD`
 - Non-dashboard (legacy Arduino) builds have no web server

@@ -416,7 +416,7 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
       <button class="sniff-btn" id="ota-reset-btn" onclick="resetOtaCredentials()" style="width:100%;margin-top:6px">重置OTA凭据</button>
       <div style="margin-top:10px;font-size:11px;color:var(--tx3);line-height:1.7">
         在PlatformIO中编译.bin文件： <span style="color:var(--acc);font-family:monospace">Ctrl+Alt+B</span><br>
-        文件位置： <span style="color:var(--acc);font-family:monospace">.pio/build/esp32_ext_mcp2515/firmware.bin</span>
+        文件位置： <span style="color:var(--acc);font-family:monospace">.pio/build/waveshare_ESP32_S3_RS485_CAN/firmware.bin</span>
       </div>
     </div>
   </details>

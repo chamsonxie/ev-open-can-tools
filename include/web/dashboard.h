@@ -21,10 +21,7 @@
 #include <ArduinoJson.h>
 #include "handlers.h"
 #include "can_helpers.h"
-#if defined(DRIVER_ESP32_EXT_MCP2515)
-#include "drivers/esp32_mcp2515_driver.h"
-#endif
-#include "web/mcp2515_dashboard_ui.h"
+#include "web/dashboard_ui.h"
 #include "can_translate.h"
 #include "espnow_broadcast.h"
 
@@ -59,9 +56,6 @@ static Preferences prefs;
 
 static CarManagerBase *dashHandler = nullptr;
 static CanDriver *dashDriver = nullptr;
-#if defined(DRIVER_ESP32_EXT_MCP2515)
-static MCP2515 *dashMcp = nullptr;
-#endif
 
 static unsigned long rxCount = 0;
 static unsigned long lastFrameMs = 0;
@@ -72,11 +66,7 @@ static unsigned long fpsFrames = 0;
 static unsigned long fpsLastMs = 0;
 static float fps = 0.0f;
 
-#if defined(DRIVER_ESP32_EXT_MCP2515)
-static uint8_t mcpEflg = 0;
-#else
 static const uint8_t mcpEflg = 0;
-#endif
 
 // WiFi AP
 static char apSSID[33] = "";
@@ -143,7 +133,6 @@ static void dashClearWifiNetwork(DashWifiNetwork &n)
     n.dns[0] = 0;
 }
 static void dashRotateAndConnect();
-static void dashApplyFilters();
 
 // CAN recorder
 #ifndef REC_CAP
@@ -497,54 +486,7 @@ static void dashLoadPrefs()
     dashLog("[BOOT] Prefs loaded");
 }
 
-// MCP2515 hardware filters — only the 7 selected CAN IDs
-static void dashApplyFilters()
-{
-#if defined(DRIVER_ESP32_EXT_MCP2515)
-    if (!dashMcp)
-        return;
-    dashMcp->setConfigMode();
-
-    // Use the 7 sniff IDs as hardware filters
-    dashMcp->setFilterMask(MCP2515::MASK0, false, 0x7FF);
-    dashMcp->setFilter(MCP2515::RXF0, false, 0x118);
-    dashMcp->setFilter(MCP2515::RXF1, false, 0x155);
-
-    dashMcp->setFilterMask(MCP2515::MASK1, false, 0x7FF);
-    dashMcp->setFilter(MCP2515::RXF2, false, 0x129);
-    dashMcp->setFilter(MCP2515::RXF3, false, 0x311);
-    dashMcp->setFilter(MCP2515::RXF4, false, 0x39B);
-    dashMcp->setFilter(MCP2515::RXF5, false, 0x3F5);
-
-    dashMcp->setNormalMode();
-    dashLog("[CFG] MCP2515 filters: 7 signals (0x118/155/129/311/39B/39D/3F5)");
-#endif
-}
-
-#if defined(DRIVER_ESP32_EXT_MCP2515)
-static unsigned long lastEflgCheckMs = 0;
-static void dashCheckBusHealth()
-{
-    if (!dashMcp)
-        return;
-    if (millis() - lastEflgCheckMs < 5000)
-        return;
-    lastEflgCheckMs = millis();
-    uint8_t eflg = dashMcp->getErrorFlags();
-    mcpEflg = eflg;
-    if (eflg & 0x20)
-    {
-        dashLog("[ERR] MCP2515 BUS-OFF -- recovering");
-        dashMcp->reset();
-        delay(10);
-        dashMcp->setBitrate(CAN_500KBPS, MCP_CRYSTAL_FREQ);
-        dashApplyFilters();
-        dashLog("[OK] MCP2515 recovered");
-    }
-}
-#else
 static void dashCheckBusHealth() {}
-#endif
 
 static WebServer server(80);
 
@@ -1367,11 +1309,7 @@ static const char *GITHUB_REPO = "ev-open-can-tools/ev-open-can-tools";
 
 static const char *getFirmwareArtifact()
 {
-#if defined(DRIVER_ESP32_EXT_MCP2515)
-    return "firmware-esp32-ext-mcp2515.bin";
-#else
     return "firmware-esp32.bin";
-#endif
 }
 
 static void parseVersion(const String &v, int &maj, int &min, int &pat, int &preRank, int &preNum)
@@ -1894,18 +1832,10 @@ static void webTask(void *)
     }
 }
 
-static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver
-#if defined(DRIVER_ESP32_EXT_MCP2515)
-                              ,
-                              MCP2515 *mcp
-#endif
-)
+static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
 {
     dashHandler = handler;
     dashDriver = driver;
-#if defined(DRIVER_ESP32_EXT_MCP2515)
-    dashMcp = mcp;
-#endif
     startMs = millis();
     fpsLastMs = millis();
 
@@ -1927,8 +1857,6 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver
     // Set CAN filters to only our 7 signals
     if (dashDriver)
         dashDriver->setFilters(kDashboardSniffIds, kDashboardSniffIdCount);
-
-    dashApplyFilters();
 
     // Clean out the old handler pool approach — single handler only
     ArduinoOTA.setHostname("ev-open-can-tools");

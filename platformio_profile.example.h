@@ -7,10 +7,8 @@
 
 // ── 板卡选择 ────────────────────────────────────────────────────
 // 取消注释以下行之一以匹配您的板卡：
-// #define DRIVER_MCP2515           // Adafruit Feather RP2040 CAN（通过 SPI 的 MCP2515）
 // #define DRIVER_SAME51            // Adafruit Feather M4 CAN Express（原生 ATSAME51 CAN）
 // #define DRIVER_TWAI // 带有内置 TWAI（CAN）外设的 ESP32 板卡
-// #define DRIVER_ESP32_EXT_MCP2515 // ESP32-S3 + 通过 SPI 的外部 MCP2515（使用 esp32_ext_mcp2515 环境）
 
 // ── 车辆硬件选择 ────────────────────────────────────────────────
 // 取消注释以下行之一以匹配您的车辆：

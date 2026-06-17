@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""压缩并gzip嵌入在mcp2515_dashboard_ui.h中的仪表板HTML。
+"""压缩并gzip嵌入在dashboard_ui.h中的仪表板HTML。
 
-从mcp2515_dashboard_ui.src.h读取源HTML，压缩HTML/CSS/JS，
-对结果进行gzip压缩，并将以下两者写入mcp2515_dashboard_ui.h：
+从dashboard_ui.src.h读取源HTML，压缩HTML/CSS/JS，
+对结果进行gzip压缩，并将以下两者写入dashboard_ui.h：
   - DASH_HTML[]   (原始压缩后的HTML，用于本地构建和调试)
   - DASH_HTML_GZ[] / DASH_HTML_GZ_LEN  (gzip压缩后的数据，用于HTTP发送)
 """
@@ -29,8 +29,8 @@ except ImportError:
     htmlmin = None
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "include" / "web" / "mcp2515_dashboard_ui.src.h"
-DST = ROOT / "include" / "web" / "mcp2515_dashboard_ui.h"
+SRC = ROOT / "include" / "web" / "dashboard_ui.src.h"
+DST = ROOT / "include" / "web" / "dashboard_ui.h"
 
 
 def js_minify(code: str) -> str:

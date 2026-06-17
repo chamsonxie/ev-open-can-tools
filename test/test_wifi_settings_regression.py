@@ -4,8 +4,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-UI_FILE = ROOT / "include" / "web" / "mcp2515_dashboard_ui.h"
-DASH_FILE = ROOT / "include" / "web" / "mcp2515_dashboard.h"
+UI_FILE = ROOT / "include" / "web" / "dashboard_ui.h"
+DASH_FILE = ROOT / "include" / "web" / "dashboard.h"
 SYNC_FILE = ROOT / "scripts" / "platformio_sync_profile.py"
 RUNTIME_FILE = ROOT / "src" / "espidf_runtime.cpp"
 

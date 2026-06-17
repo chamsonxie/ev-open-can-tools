@@ -6,10 +6,8 @@ from pathlib import Path
 
 
 DRIVER_DEFINES = (
-    "DRIVER_MCP2515",
     "DRIVER_SAME51",
     "DRIVER_TWAI",
-    "DRIVER_ESP32_EXT_MCP2515",
 )
 VEHICLE_DEFINES = ("LEGACY", "HW3", "HW4")
 OPTIONAL_DEFINES = (
