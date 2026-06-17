@@ -595,7 +595,13 @@ static void handleStatus()
     j += mcpEflg;
     j += ",\"up\":";
     j += (millis() - startMs) / 1000;
+#if defined(HW4)
+    j += ",\"hw\":2";
+#elif defined(LEGACY)
+    j += ",\"hw\":0";
+#else
     j += ",\"hw\":1";
+#endif
     j += "}";
     server.send(200, "application/json", j);
 }
@@ -1779,7 +1785,8 @@ static void handleEspNowStatus()
     j += ",\"discovered\":[";
     for (int i = 0; i < espnowDiscoveredCount; i++)
     {
-        if (i) j += ",";
+        if (i)
+            j += ",";
         j += "{\"mac\":\"" + espnowGetDiscoveredMac(i) + "\"";
         j += ",\"rssi\":" + String(espnowGetDiscoveredRssi(i));
         j += ",\"paired\":" + String(espnowGetDiscoveredPaired(i) ? "true" : "false");
@@ -1889,9 +1896,10 @@ static void webTask(void *)
 
 static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver
 #if defined(DRIVER_ESP32_EXT_MCP2515)
-                               , MCP2515 *mcp
+                              ,
+                              MCP2515 *mcp
 #endif
-                              )
+)
 {
     dashHandler = handler;
     dashDriver = driver;
@@ -1925,9 +1933,12 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver
     // Clean out the old handler pool approach — single handler only
     ArduinoOTA.setHostname("ev-open-can-tools");
     ArduinoOTA.setPassword(DASH_OTA_PASS);
-    ArduinoOTA.onStart([]() { dashLog("[OTA] Starting..."); });
-    ArduinoOTA.onEnd([]() { dashLog("[OTA] Done -- rebooting"); });
-    ArduinoOTA.onError([](ota_error_t e) { dashLog("[OTA] Error: " + String(e)); });
+    ArduinoOTA.onStart([]()
+                       { dashLog("[OTA] Starting..."); });
+    ArduinoOTA.onEnd([]()
+                     { dashLog("[OTA] Done -- rebooting"); });
+    ArduinoOTA.onError([](ota_error_t e)
+                       { dashLog("[OTA] Error: " + String(e)); });
     ArduinoOTA.begin();
 
     server.on("/", HTTP_GET, handleRoot);
@@ -1965,24 +1976,21 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver
     server.on("/espnow_pair", HTTP_POST, handleEspNowPair);
     server.on("/espnow_unpair", HTTP_POST, handleEspNowUnpair);
     server.on("/espnow_test", HTTP_POST, []()
-    {
+              {
         espnowSendTestPackets();
-        server.send(200, "application/json", "{\"ok\":true}");
-    });
+        server.send(200, "application/json", "{\"ok\":true}"); });
     server.on("/espnow_scenario", HTTP_POST, []()
-    {
+              {
         espnowStartScenario();
-        server.send(200, "application/json", "{\"ok\":true}");
-    });
+        server.send(200, "application/json", "{\"ok\":true}"); });
     server.on("/espnow_debug", HTTP_GET, []()
-    {
+              {
         String r = "espnowInitialized=" + String(espnowInitialized ? "true" : "false") + "\n";
         r += "espnowScanning=" + String(espnowScanning ? "true" : "false") + "\n";
         r += "espnowHasPaired=" + String(espnowHasPaired ? "true" : "false") + "\n";
         r += "espnowDiscoveredCount=" + String(espnowDiscoveredCount) + "\n";
         r += "espnowCanBroadcastEnabled=" + String(espnowCanBroadcastEnabled ? "true" : "false") + "\n";
-        server.send(200, "text/plain", r);
-    });
+        server.send(200, "text/plain", r); });
 
     server.begin();
     if (strlen(staSSID) > 0)
