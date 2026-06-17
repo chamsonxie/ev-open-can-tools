@@ -487,6 +487,21 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
     </div>
   </div>
 
+  <div class="subsec" data-subkey="can-id-collector">
+    <div class="subsec-head">
+      <div class="subsec-title">CAN ID统计 <span class="title-help" onclick="return toggleHelp(this,event)" title="收集所有CAN ID并记录接收次数。计数上限9999，点击重置清零。">?</span></div>
+      <div class="subsec-meta" style="display:flex;align-items:center;gap:8px">
+        <span id="cid-count">0个ID</span>
+        <button onclick="resetCanIdCollector()" style="font-size:10px;padding:2px 8px;border:1px solid var(--bd2);border-radius:5px;background:transparent;color:var(--tx3);cursor:pointer;font-family:inherit">重置</button>
+      </div>
+    </div>
+    <div class="subsec-body">
+      <div class="sniff-box" id="cid-list" style="max-height:300px">
+        <div style="padding:20px;color:var(--tx3);text-align:center;font-size:12px">等待CAN帧</div>
+      </div>
+    </div>
+  </div>
+
   <div class="subsec" data-subkey="can-last-write-check">
     <div class="subsec-head">
       <div class="subsec-title">上次写入检查 <span class="title-help" onclick="return toggleHelp(this,event)" title="比较最后注入的帧与总线上具有相同CAN ID和mux的最新帧。有助于发现覆盖问题，但不能证明模块接受了更改。">?</span></div>
@@ -620,6 +635,7 @@ function updateGtwBadge(v){
 }
 let state={hw:1,can:true,apGate:false,sp:0,spAuto:true,plgr:1,plgrmax:20,gate:null};
 let sniffPaused=false,sniffFrames=[];
+let canIdCollectorData=[];
 let sniffShowDbcIds=localStorage.getItem('sniffIdMode')==='dbc';
 let otaFile=null;
 let otaUser=localStorage.getItem('otaU')||'',otaPass=localStorage.getItem('otaP')||'';
@@ -1173,6 +1189,32 @@ function renderTranslated(){
 
 function renderSnifferAndTrans(){ renderSniffer(); renderTranslated(); }
 
+function renderCanIdCollector(){
+  const el=$('cid-list');
+  if(!el)return;
+  if(!canIdCollectorData.length){
+    el.innerHTML='<div style="padding:20px;color:var(--tx3);text-align:center;font-size:12px">暂无ID数据</div>';
+    $('cid-count').textContent='0个ID';
+    return;
+  }
+  $('cid-count').textContent=canIdCollectorData.length+'个ID';
+  el.innerHTML='<table class="mux-tbl"><tr><th>十进制ID</th><th>十六进制ID</th><th>接收次数</th></tr>'+
+    canIdCollectorData.map(e=>'<tr><td>'+e.id+'</td><td>'+(e.hex||'0x'+toHex(e.id,3))+'</td><td>'+e.count+'</td></tr>').join('')+'</table>';
+}
+
+async function pollCanIdCollector(){
+  return runPoll('cancids',async()=>{
+    if(!dashboardStatusOk)return;
+    try{const d=await fetchPollJson('/can_ids',2500);canIdCollectorData=d.ids||[];renderCanIdCollector();}catch(e){}
+  });
+}
+
+async function resetCanIdCollector(){
+  try{await fetch('/can_ids_reset',{method:'POST'});}catch(e){}
+  canIdCollectorData=[];
+  renderCanIdCollector();
+}
+
 async function pollSniffer(){
   return runPoll('frames',async()=>{
     if(sniffPaused||!dashboardStatusOk)return;
@@ -1293,7 +1335,7 @@ async function poll(){
     const eprn=$('tgl-eprn');if(eprn&&typeof d.eprn!=='undefined')eprn.checked=d.eprn;
     if(!dashboardInitialLoaded){
       dashboardInitialLoaded=true;
-      pollLog();pollSniffer();pollPlugins();loadWifiNetworks();loadWifiStatus();loadApStatus();loadUpdateInfo();loadCanPins();
+      pollLog();pollSniffer();pollCanIdCollector();pollPlugins();loadWifiNetworks();loadWifiStatus();loadApStatus();loadUpdateInfo();loadCanPins();
     }
     }catch(e){}
   });
@@ -2474,7 +2516,7 @@ async function unpairEspNow(){
   }catch(e){}
 }
 
-dashboardPollTimers.push(setInterval(poll,2000));dashboardPollTimers.push(setInterval(pollLog,5000));dashboardPollTimers.push(setInterval(pollSniffer,1000));dashboardPollTimers.push(setInterval(pollPlugins,10000));dashboardPollTimers.push(setInterval(loadWifiStatus,10000));dashboardPollTimers.push(setInterval(loadApStatus,10000));dashboardPollTimers.push(setInterval(loadWifiNetworks,30000));dashboardPollTimers.push(setInterval(pollEspNow,3000));
+dashboardPollTimers.push(setInterval(poll,2000));dashboardPollTimers.push(setInterval(pollLog,5000));dashboardPollTimers.push(setInterval(pollSniffer,1000));dashboardPollTimers.push(setInterval(pollCanIdCollector,2000));dashboardPollTimers.push(setInterval(pollPlugins,10000));dashboardPollTimers.push(setInterval(loadWifiStatus,10000));dashboardPollTimers.push(setInterval(loadApStatus,10000));dashboardPollTimers.push(setInterval(loadWifiNetworks,30000));dashboardPollTimers.push(setInterval(pollEspNow,3000));
 initCardMinimizers();initSubsectionMinimizers();updateSniffIdToggle();poll();pollRec();peRender();
 </script>
 </body>

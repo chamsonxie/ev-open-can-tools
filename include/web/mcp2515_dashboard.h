@@ -209,6 +209,36 @@ static constexpr uint32_t kDashboardSniffIds[] = {
 };
 static constexpr uint8_t kDashboardSniffIdCount = sizeof(kDashboardSniffIds) / sizeof(kDashboardSniffIds[0]);
 
+// CAN ID collector — tracks every observed CAN ID and its receive count
+#define CAN_ID_COLLECTOR_MAX 500
+#define CAN_ID_COLLECTOR_COUNT_MAX 9999
+struct CanIdEntry
+{
+    uint32_t id;
+    uint16_t count;
+};
+static CanIdEntry canIdEntries[CAN_ID_COLLECTOR_MAX];
+static int canIdEntryCount = 0;
+
+static void canIdCollectorPush(uint32_t id)
+{
+    for (int i = 0; i < canIdEntryCount; i++)
+    {
+        if (canIdEntries[i].id == id)
+        {
+            if (canIdEntries[i].count < CAN_ID_COLLECTOR_COUNT_MAX)
+                canIdEntries[i].count++;
+            return;
+        }
+    }
+    if (canIdEntryCount < CAN_ID_COLLECTOR_MAX)
+    {
+        canIdEntries[canIdEntryCount].id = id;
+        canIdEntries[canIdEntryCount].count = 1;
+        canIdEntryCount++;
+    }
+}
+
 static void sniffPush(const CanFrame &f)
 {
     uint8_t dlc = (f.dlc <= 8) ? f.dlc : 8;
@@ -248,6 +278,7 @@ static void mcpDashOnFrame(const CanFrame &f)
     canOnline = true;
     fpsFrames++;
     sniffPush(f);
+    canIdCollectorPush(f.id);
 
     // Update ESP-NOW signal state from this frame
     espnowUpdateFromFrame(f);
@@ -646,6 +677,28 @@ static void handleResetStats()
 {
     rxCount = 0;
     dashLog("[CFG] Stats reset");
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleCanIds()
+{
+    String j = "{\"ids\":[";
+    for (int i = 0; i < canIdEntryCount; i++)
+    {
+        if (i)
+            j += ",";
+        j += "{\"id\":" + String(canIdEntries[i].id) +
+             ",\"hex\":\"0x" + String(canIdEntries[i].id, HEX) + "\"" +
+             ",\"count\":" + String(canIdEntries[i].count) + "}";
+    }
+    j += "]}";
+    server.send(200, "application/json", j);
+}
+
+static void handleCanIdsReset()
+{
+    canIdEntryCount = 0;
+    dashLog("[CFG] CAN ID collector reset");
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -1884,6 +1937,8 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver
     server.on("/frames", HTTP_GET, handleFrames);
     server.on("/log", HTTP_GET, handleLog);
     server.on("/reset_stats", HTTP_POST, handleResetStats);
+    server.on("/can_ids", HTTP_GET, handleCanIds);
+    server.on("/can_ids_reset", HTTP_POST, handleCanIdsReset);
     server.on("/rec_start", HTTP_POST, handleRecStart);
     server.on("/rec_stop", HTTP_POST, handleRecStop);
     server.on("/rec_status", HTTP_GET, handleRecStatus);
