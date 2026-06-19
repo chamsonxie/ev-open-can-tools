@@ -27,7 +27,7 @@ public:
             return false;
 
         g_config_ = TWAI_GENERAL_CONFIG_DEFAULT(txPin_, rxPin_, TWAI_MODE_LISTEN_ONLY);
-        g_config_.rx_queue_len = 32;
+        g_config_.rx_queue_len = 128;
         g_config_.tx_queue_len = 1;
 
         t_config_ = TWAI_TIMING_CONFIG_500KBITS();
@@ -165,7 +165,7 @@ public:
 
 private:
     static constexpr uint8_t kMaxExactFilters = 32;
-    static constexpr uint8_t kReadDrainBudget = 8;
+    static constexpr uint8_t kReadDrainBudget = 48;
     static constexpr uint32_t BUSOFF_COOLDOWN_MS = 1000;
 
     static const char *twaiStateName(twai_state_t state)

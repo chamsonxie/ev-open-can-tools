@@ -196,13 +196,22 @@ struct CanIdEntry
 };
 static CanIdEntry canIdEntries[CAN_ID_COLLECTOR_MAX];
 static int canIdEntryCount = 0;
+static int canIdLastMatchIdx = -1;
 
 static void canIdCollectorPush(uint32_t id)
 {
+    if (canIdLastMatchIdx >= 0 && canIdLastMatchIdx < canIdEntryCount &&
+        canIdEntries[canIdLastMatchIdx].id == id)
+    {
+        if (canIdEntries[canIdLastMatchIdx].count < CAN_ID_COLLECTOR_COUNT_MAX)
+            canIdEntries[canIdLastMatchIdx].count++;
+        return;
+    }
     for (int i = 0; i < canIdEntryCount; i++)
     {
         if (canIdEntries[i].id == id)
         {
+            canIdLastMatchIdx = i;
             if (canIdEntries[i].count < CAN_ID_COLLECTOR_COUNT_MAX)
                 canIdEntries[i].count++;
             return;
@@ -212,18 +221,23 @@ static void canIdCollectorPush(uint32_t id)
     {
         canIdEntries[canIdEntryCount].id = id;
         canIdEntries[canIdEntryCount].count = 1;
+        canIdLastMatchIdx = canIdEntryCount;
         canIdEntryCount++;
     }
 }
 
+static portMUX_TYPE sniffMux = portMUX_INITIALIZER_UNLOCKED;
+
 static void sniffPush(const CanFrame &f)
 {
+    taskENTER_CRITICAL(&sniffMux);
     uint8_t dlc = (f.dlc <= 8) ? f.dlc : 8;
     sniffBuf[sniffHead] = {millis(), f.id, dlc, {}};
     memcpy(sniffBuf[sniffHead].data, f.data, dlc);
     sniffHead = (sniffHead + 1) % SNIFFER_CAP;
     if (sniffCount < SNIFFER_CAP)
         sniffCount++;
+    taskEXIT_CRITICAL(&sniffMux);
 }
 
 #define LOG_CAP 80
@@ -646,6 +660,7 @@ static void handleCanIdsExport()
 static void handleCanIdsReset()
 {
     canIdEntryCount = 0;
+    canIdLastMatchIdx = -1;
     dashLog("[CFG] CAN ID collector reset");
     server.send(200, "application/json", "{\"ok\":true}");
 }

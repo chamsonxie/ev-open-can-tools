@@ -105,7 +105,7 @@ static void appLoop()
 #if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD)
         if (++framesThisLoop >= 32)
         {
-            yield();
+            taskYIELD();
             break;
         }
 #endif

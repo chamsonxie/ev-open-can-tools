@@ -57,7 +57,7 @@ void delay(uint32_t ms)
 
 void yield()
 {
-    vTaskDelay(1);
+    taskYIELD();
 }
 
 uint32_t millis()

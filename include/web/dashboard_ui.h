@@ -228,31 +228,6 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 .foot{text-align:center;padding:8px 16px 20px;font-size:11px;color:var(--tx3)}
 .footer-actions{display:flex;justify-content:center;padding:4px 16px 24px}
 .footer-support-btn{flex:0 1 280px}
-
-/* 信号面板 (ESP-NOW) */
-.sig-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;margin-top:4px}
-.sig-item{background:var(--bg2);border:1px solid var(--bd);border-radius:7px;padding:6px 8px;min-width:0}
-.sig-lbl{font-size:9px;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:1px}
-.sig-val{font-size:13px;font-weight:600;color:var(--tx)}
-.sig-val.sig-act{color:var(--ok)}
-.sig-val.sig-brake{color:var(--err)}
-.sig-val.sig-warn{color:var(--warn)}
-.sig-val.sig-dim{color:var(--tx3)}
-.sig-val.sig-acc{color:var(--acc)}
-
-/* 信号仪表盘 (CAN ID分组) */
-.dash-sig-block{background:var(--bg2);border:1px solid var(--bd);border-radius:9px;padding:10px 12px;margin-bottom:8px}
-.dash-sig-block:last-child{margin-bottom:0}
-.dash-sig-id{font-size:10px;color:var(--acc);font-weight:600;font-family:'SF Mono','Courier New',monospace}
-.dash-sig-name{font-size:10px;color:var(--tx3);margin-left:6px}
-.dash-sig-row{display:flex;flex-wrap:wrap;gap:3px 12px;margin-top:5px}
-.dash-sig-item{display:flex;align-items:baseline;gap:3px;font-size:12px;line-height:1.7}
-.dash-sig-label{color:var(--tx3);font-size:10px}
-.dash-sig-value{color:var(--tx);font-weight:600}
-.dash-sig-value.active{color:var(--ok)}
-.dash-sig-value.warning{color:var(--warn)}
-.dash-sig-value.critical{color:var(--err)}
-.dash-sig-value.highlight{color:var(--acc)}
 </style>
 </head>
 <body>
@@ -550,16 +525,6 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
   </div>
 </div>
 
-
-<div class="card">
-  <div class="card-hdr">
-    <div class="card-title">信号仪表盘 <span class="title-help" onclick="return toggleHelp(this,event)" title="最新5个CAN ID的全部信号实时解码值。数据来自CAN总线实时帧。">?</span></div>
-    <div class="card-meta" id="dash-sig-status">等待中</div>
-  </div>
-  <div id="dash-sig-body">
-    <div style="padding:16px;color:var(--tx3);text-align:center;font-size:12px">等待CAN信号...</div>
-  </div>
-</div>
 
 <div class="card">
   <div class="card-hdr"><div class="card-title">ESP-NOW <span class="title-help" onclick="return toggleHelp(this,event)" title="通过ESP-NOW广播CAN信号（油门、刹车、转向灯、车速）到附近的ESP32设备。扫描并连接接收端设备后自动广播。">?</span></div><div class="card-meta" id="espnow-status">未初始化</div></div>
@@ -2612,99 +2577,7 @@ async function unpairEspNow(){
   }catch(e){}
 }
 
-// ── CAN Signal Dashboard ──
-async function pollCanSignals(){
-  return runPoll('canSig',async()=>{
-    if(!dashboardStatusOk)return;
-    try{
-      const d=await fetchPollJson('/can_signals',3000);
-      renderCanSignals(d);
-    }catch(e){}
-  });
-}
-
-function sigCell(lbl,val,cls){
-  return '<span class="dash-sig-item"><span class="dash-sig-label">'+lbl+'</span><span class="dash-sig-value'+(cls?' '+cls:'')+'">'+val+'</span></span>';
-}
-
-function renderCanSignals(d){
-  const body=$('dash-sig-body');if(!body)return;
-  const st=$('dash-sig-status');if(!st)return;
-  if(!d||!d['0x118']){body.innerHTML='<div style="padding:16px;color:var(--tx3);text-align:center;font-size:12px">等待CAN信号...</div>';st.textContent='—';return;}
-  st.textContent='实时';
-  let html='';
-  // 0x118
-  const a=d['0x118'];
-  html+='<div class="dash-sig-block"><div class="dash-sig-id">0x118 <span class="dash-sig-name">DI_systemStatus (档位/系统/牵引力)</span></div>'+
-    '<div class="dash-sig-row">'+
-    sigCell('档位',a.gearLabel,a.gear===4?'active':a.gear===2?'warning':'')+
-    sigCell('油门',a.accelPedalPos+'%',a.accelPedalPos>0?'active':'')+
-    sigCell('动能回收',a.regenLight?'ON':'OFF',a.regenLight?'active':'')+
-    sigCell('制动踏板',a.brakePedalState?'ON':'OFF',a.brakePedalState?'critical':'')+
-    sigCell('系统',a.systemStateLabel,'')+
-    sigCell('牵引力控制',a.tractionControlLabel,a.tractionControlMode>0?'active':'')+
-    sigCell('EPB',a.epbLabel,a.epbRequest>0?'active':'')+
-    sigCell('轨迹模式',a.trackModeState?'ON':'OFF',a.trackModeState?'active':'')+
-    sigCell('防盗',a.immobilizerState?'ON':'OFF',a.immobilizerState?'warning':'')+
-    sigCell('钥匙',a.proximity?'YES':'NO',a.proximity?'active':'')+
-    sigCell('KeepAlive',a.keepAliveRequest,'')+
-    '</div></div>';
-  // 0x257
-  const b=d['0x257'];
-  const unit=b.uiSpeedUnits===1?'km/h':'mph';
-  html+='<div class="dash-sig-block"><div class="dash-sig-id">0x257 <span class="dash-sig-name">DI_speed (车速/显示)</span></div>'+
-    '<div class="dash-sig-row">'+
-    sigCell('车速',b.vehicleSpeed+' ('+(b.vehicleSpeed*0.08).toFixed(1)+' km/h)','highlight')+
-    sigCell('显示速度',b.uiSpeed+' '+unit,'')+
-    sigCell('速度单位',b.uiSpeedUnits===1?'km/h':'mph','')+
-    '</div></div>';
-  // 0x389
-  const c=d['0x389'];
-  const collLabels=['无','FCW 1级','FCW 2级','FCW 3级','AEB预','AEB全力','AEB减轻','AEB-','AEB待机','AEB关闭'];
-  const collTxt=collLabels[c.longCollisionWarning]||c.longCollisionWarning;
-  const lssTxt=c.lssLabel.charAt(0).toUpperCase()+c.lssLabel.slice(1);
-  html+='<div class="dash-sig-block"><div class="dash-sig-id">0x389 <span class="dash-sig-name">DAS_status2 (辅助驾驶状态)</span></div>'+
-    '<div class="dash-sig-row">'+
-    sigCell('碰撞预警',collTxt,c.longCollisionWarning>0?'critical':'')+
-    sigCell('车道状态',lssTxt,c.lssState>0?'active':'')+
-    sigCell('驾驶交互',c.driverInteractionLevel,c.driverInteractionLevel>0?'active':'')+
-    sigCell('ACC限速',c.accSpeedLimit?c.accSpeedLimit+' mph':'—','')+
-    '</div></div>';
-  // 0x39D
-  const e=d['0x39D'];
-  const brakeCls=e.driverBrakeApply===2?'critical':e.driverBrakeApply===0?'dim':'';
-  html+='<div class="dash-sig-block"><div class="dash-sig-id">0x39D <span class="dash-sig-name">IBST_status (制动/iBooster)</span></div>'+
-    '<div class="dash-sig-row">'+
-    sigCell('刹车',e.brakeLabel,brakeCls)+
-    sigCell('制动行程',e.brakeRodTravel+' mm','')+
-    sigCell('内部状态',e.internalState,'')+
-    sigCell('iBooster状态',e.iBoosterStatus,e.iBoosterStatus?'warning':'')+
-    '</div></div>';
-  // 0x3F5
-  const f=d['0x3F5'];
-  const turnCls=f.turnLeft>0||f.turnRight>0?'active':'';
-  html+='<div class="dash-sig-block"><div class="dash-sig-id">0x3F5 <span class="dash-sig-name">VCFRONT_lighting (前部灯光)</span></div>'+
-    '<div class="dash-sig-row">'+
-    sigCell('左转灯',f.turnLeftLabel,f.turnLeft>0?'critical':'')+
-    sigCell('右转灯',f.turnRightLabel,f.turnRight>0?'critical':'')+
-    sigCell('近光L',f.lowBeamLeftLabel,f.lowBeamLeft===1?'active':'')+
-    sigCell('近光R',f.lowBeamRightLabel,f.lowBeamRight===1?'active':'')+
-    sigCell('远光L',f.highBeamLeftLabel,f.highBeamLeft===1?'active':'')+
-    sigCell('远光R',f.highBeamRightLabel,f.highBeamRight===1?'active':'')+
-    sigCell('日行L',f.drlLeftLabel,f.drlLeft===1?'active':'')+
-    sigCell('日行R',f.drlRightLabel,f.drlRight===1?'active':'')+
-    sigCell('示宽L',f.parkLeftLabel,'')+
-    sigCell('示宽R',f.parkRightLabel,'')+
-    sigCell('雾灯L',f.fogLeftLabel,'')+
-    sigCell('雾灯R',f.fogRightLabel,'')+
-    sigCell('侧灯L',f.sideRepeaterLeftLabel,'')+
-    sigCell('侧灯R',f.sideRepeaterRightLabel,'')+
-    sigCell('双闪',f.hazardLightRequest>0?'ON':'OFF',f.hazardLightRequest>0?'warning':'')+
-    '</div></div>';
-  body.innerHTML=html;
-}
-
-dashboardPollTimers.push(setInterval(poll,2000));dashboardPollTimers.push(setInterval(pollLog,5000));dashboardPollTimers.push(setInterval(pollSniffer,1000));dashboardPollTimers.push(setInterval(pollCanIdCollector,2000));dashboardPollTimers.push(setInterval(pollPlugins,10000));dashboardPollTimers.push(setInterval(loadWifiStatus,10000));dashboardPollTimers.push(setInterval(loadApStatus,10000));dashboardPollTimers.push(setInterval(loadWifiNetworks,30000));dashboardPollTimers.push(setInterval(pollEspNow,3000));dashboardPollTimers.push(setInterval(pollCanSignals,1000));
+dashboardPollTimers.push(setInterval(poll,2000));dashboardPollTimers.push(setInterval(pollLog,5000));dashboardPollTimers.push(setInterval(pollSniffer,1000));dashboardPollTimers.push(setInterval(pollCanIdCollector,2000));dashboardPollTimers.push(setInterval(pollPlugins,10000));dashboardPollTimers.push(setInterval(loadWifiStatus,10000));dashboardPollTimers.push(setInterval(loadApStatus,10000));dashboardPollTimers.push(setInterval(loadWifiNetworks,30000));dashboardPollTimers.push(setInterval(pollEspNow,3000));
 initCardMinimizers();initSubsectionMinimizers();updateSniffIdToggle();poll();pollRec();peRender();
 </script>
 </body>

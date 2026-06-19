@@ -351,7 +351,9 @@ static void espnowBroadcastCanData()
     for (size_t i = 0; i < sizeof(pkt) - 1; i++)
         pkt.chksum ^= bytes[i];
 
-    esp_now_send(ESPNOW_BROADCAST_MAC, reinterpret_cast<const uint8_t *>(&pkt), sizeof(pkt));
+    esp_err_t sendRet = esp_now_send(ESPNOW_BROADCAST_MAC, reinterpret_cast<const uint8_t *>(&pkt), sizeof(pkt));
+    if (sendRet != ESP_OK)
+        Serial.printf("[ESPNOW] send failed: %d\n", sendRet);
 }
 
 static void espnowSendTestPackets()
