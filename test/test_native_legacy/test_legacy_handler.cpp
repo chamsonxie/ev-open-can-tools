@@ -23,8 +23,8 @@ void tearDown() {}
 
 void test_handler_filter_ids_count()
 {
-    TEST_ASSERT_EQUAL_UINT8(0, handler.filterIdCount());
-    TEST_ASSERT_NULL(handler.filterIds());
+    TEST_ASSERT_EQUAL_UINT8(5, handler.filterIdCount());
+    TEST_ASSERT_NOT_NULL(handler.filterIds());
 }
 
 // --- Gear tracking (from 0x118) ---

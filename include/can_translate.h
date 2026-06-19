@@ -88,19 +88,6 @@ inline bool formatCanTranslation(uint32_t id, const uint8_t *data, uint8_t dlc, 
         return true;
     }
 
-    // ── 0x129 (297) SCCM_steeringAngleSensor ──
-    // DBC: steeringAngle=16|14@1+, steeringAngleSpeed=32|14@1+
-    if (id == 297 || id == 0x129)
-    {
-        if (dlc < 6) return false;
-        float angle = extractIntel(data, 16, 14) * 0.1f - 819.2f;
-        float speed = extractIntel(data, 32, 14) * 0.5f - 4096.0f;
-        char tmp[64];
-        snprintf(tmp, sizeof(tmp), "方向盘:%.1f° 角速度:%.0f°/s", angle, speed);
-        strlcpy(out, tmp, outLen);
-        return true;
-    }
-
     // ── 0x257 (599) DI_speed ──
     // DBC: vehicleSpeed=12|12@1+ (0.08,-40) [-40|285] "kph"
     //      uiSpeed=24|8@1+ (1,0) [0|254]

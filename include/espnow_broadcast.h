@@ -249,16 +249,6 @@ static void espnowUpdateFromFrame(const CanFrame &frame)
         return;
     }
 
-    // 0x129 SCCM_steeringAngleSensor: steeringAngle, steeringAngleSpeed
-    // DBC: steeringAngle=16|14@1+, steeringAngleSpeed=32|14@1+
-    if (frame.id == 297 || frame.id == 0x129)
-    {
-        if (frame.dlc < 6) return;
-        espnowCurData.steeringAngle      = (int16_t)extractIntel(frame.data, 16, 14);
-        espnowCurData.steeringAngleSpeed = (int16_t)extractIntel(frame.data, 32, 14);
-        return;
-    }
-
     // 0x257 DI_speed: vehicleSpeed, uiSpeed
     // DBC: vehicleSpeed=12|12@1+ (0.08,-40), uiSpeed=24|8@1+
     if (frame.id == 599 || frame.id == 0x257)

@@ -169,8 +169,6 @@ static const char *decodeCanId(uint32_t id)
     {
     case 0x118:
         return "DI_systemStatus (档位/油门/动能回收/制动)";
-    case 0x129:
-        return "SCCM_steeringAngleSensor (方向盘转角)";
     case 0x257:
         return "DI_speed (车速/显示速度)";
     case 0x389:
@@ -185,8 +183,8 @@ static const char *decodeCanId(uint32_t id)
 }
 
 // Sniff: only accept the 5 relay CAN IDs
-static constexpr uint32_t kDashboardSniffIds[] = {0x118, 0x129, 0x257, 0x389, 0x39D, 0x3F5};
-static constexpr uint8_t kDashboardSniffIdCount = 6;
+static constexpr uint32_t kDashboardSniffIds[] = {0x118, 0x257, 0x389, 0x39D, 0x3F5};
+static constexpr uint8_t kDashboardSniffIdCount = 5;
 
 // CAN ID collector — tracks every observed CAN ID and its receive count
 #define CAN_ID_COLLECTOR_MAX 500
@@ -1748,8 +1746,8 @@ static void handleEspNowStatus()
     j += ",\"gear\":" + String(d.gear);
     j += ",\"accel\":" + String(d.accelPedalPos);
     j += ",\"regen\":" + String(d.regenLight);
-    j += ",\"steeringAngle\":" + String(d.steeringAngle);
-    j += ",\"steeringSpeed\":" + String(d.steeringAngleSpeed);
+    j += ",\"brakePedal\":" + String(d.brakePedalState);
+
     j += ",\"speed\":" + String(d.vehicleSpeed);
     j += ",\"uiSpeed\":" + String(d.uiSpeed);
     j += ",\"collisionWarning\":" + String(d.longCollisionWarning);
