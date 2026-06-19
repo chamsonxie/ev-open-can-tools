@@ -1775,6 +1775,83 @@ static void handleEspNowStatus()
     server.send(200, "application/json", j);
 }
 
+// ── CAN Signal Dashboard (live decoded signals grouped by ID) ──
+static void handleCanSignals()
+{
+    const EspNowCanDataPkt &d = espnowCurData;
+    String j = "{";
+
+    // 0x118 DI_systemStatus
+    static const char *gearNames[] = {"INV","P","R","N","D","","","SNA"};
+    static const char *sysNames[] = {"POWERON","STANDBY","CHARGING","PARK","DRIVE","REVERSE","",""};
+    static const char *trcNames[] = {"OFF","SLIP","TRAC","STAB"};
+    static const char *epbNames[] = {"release","apply","applySNA","SNA"};
+    j += "\"0x118\":{";
+    j += "\"gear\":" + String(d.gear) + ",\"gearLabel\":\"" + String(gearNames[d.gear < 8 ? d.gear : 7]) + "\"";
+    j += ",\"accelPedalPos\":" + String(d.accelPedalPos);
+    j += ",\"regenLight\":" + String(d.regenLight);
+    j += ",\"brakePedalState\":" + String(d.brakePedalState);
+    j += ",\"systemState\":" + String(d.systemState) + ",\"systemStateLabel\":\"" + String(sysNames[d.systemState < 8 ? d.systemState : 6]) + "\"";
+    j += ",\"tractionControlMode\":" + String(d.tractionControlMode) + ",\"tractionControlLabel\":\"" + String(trcNames[d.tractionControlMode < 4 ? d.tractionControlMode : 0]) + "\"";
+    j += ",\"epbRequest\":" + String(d.epbRequest) + ",\"epbLabel\":\"" + String(epbNames[d.epbRequest < 4 ? d.epbRequest : 3]) + "\"";
+    j += ",\"trackModeState\":" + String(d.trackModeState);
+    j += ",\"immobilizerState\":" + String(d.immobilizerState);
+    j += ",\"proximity\":" + String(d.proximity);
+    j += ",\"keepAliveRequest\":" + String(d.keepAliveRequest);
+    j += "}";
+
+    // 0x257 DI_speed
+    j += ",\"0x257\":{";
+    j += "\"vehicleSpeed\":" + String(d.vehicleSpeed);
+    j += ",\"uiSpeed\":" + String(d.uiSpeed);
+    j += ",\"uiSpeedUnits\":" + String(d.uiSpeedUnits);
+    j += "}";
+
+    // 0x389 DAS_status2
+    static const char *lssNames[] = {"off","left","right","both","","","",""};
+    static const char *collNames[] = {"none","FCW_Level1","FCW_Level2","FCW_Level3","AEB_Pre","AEB_Full","AEB_Mitigation","AEB_None","AEB_Standby","AEB_Disabled","","","","","",""};
+    j += ",\"0x389\":{";
+    j += "\"longCollisionWarning\":" + String(d.longCollisionWarning) + ",\"collisionLabel\":\"" + String(collNames[d.longCollisionWarning < 16 ? d.longCollisionWarning : 0]) + "\"";
+    j += ",\"lssState\":" + String(d.lssState) + ",\"lssLabel\":\"" + String(lssNames[d.lssState < 8 ? d.lssState : 0]) + "\"";
+    j += ",\"driverInteractionLevel\":" + String(d.driverInteractionLevel);
+    j += ",\"accSpeedLimit\":" + String(d.accSpeedLimit);
+    j += "}";
+
+    // 0x39D IBST_status
+    static const char *brakeNames[] = {"uninit","no","yes","fault"};
+    j += ",\"0x39D\":{";
+    j += "\"driverBrakeApply\":" + String(d.driverBrakeApply) + ",\"brakeLabel\":\"" + String(brakeNames[d.driverBrakeApply < 4 ? d.driverBrakeApply : 0]) + "\"";
+    j += ",\"brakeRodTravel\":" + String(d.brakeRodTravel);
+    j += ",\"internalState\":" + String(d.internalState);
+    j += ",\"iBoosterStatus\":" + String(d.iBoosterStatus);
+    j += "}";
+
+    // 0x3F5 VCFRONT_lighting
+    static const char *lightNames[] = {"off","on","fault","SNA"};
+    j += ",\"0x3F5\":{";
+    j += "\"lowBeamLeft\":" + String(d.lowBeamLeftStatus) + ",\"lowBeamLeftLabel\":\"" + String(lightNames[d.lowBeamLeftStatus < 4 ? d.lowBeamLeftStatus : 3]) + "\"";
+    j += ",\"lowBeamRight\":" + String(d.lowBeamRightStatus) + ",\"lowBeamRightLabel\":\"" + String(lightNames[d.lowBeamRightStatus < 4 ? d.lowBeamRightStatus : 3]) + "\"";
+    j += ",\"highBeamLeft\":" + String(d.highBeamLeftStatus) + ",\"highBeamLeftLabel\":\"" + String(lightNames[d.highBeamLeftStatus < 4 ? d.highBeamLeftStatus : 3]) + "\"";
+    j += ",\"highBeamRight\":" + String(d.highBeamRightStatus) + ",\"highBeamRightLabel\":\"" + String(lightNames[d.highBeamRightStatus < 4 ? d.highBeamRightStatus : 3]) + "\"";
+    j += ",\"drlLeft\":" + String(d.drlLeftStatus) + ",\"drlLeftLabel\":\"" + String(lightNames[d.drlLeftStatus < 4 ? d.drlLeftStatus : 3]) + "\"";
+    j += ",\"drlRight\":" + String(d.drlRightStatus) + ",\"drlRightLabel\":\"" + String(lightNames[d.drlRightStatus < 4 ? d.drlRightStatus : 3]) + "\"";
+    j += ",\"turnLeft\":" + String(d.turnSignalLeftStatus) + ",\"turnLeftLabel\":\"" + String(lightNames[d.turnSignalLeftStatus < 4 ? d.turnSignalLeftStatus : 3]) + "\"";
+    j += ",\"turnRight\":" + String(d.turnSignalRightStatus) + ",\"turnRightLabel\":\"" + String(lightNames[d.turnSignalRightStatus < 4 ? d.turnSignalRightStatus : 3]) + "\"";
+    j += ",\"parkLeft\":" + String(d.parkLeftStatus) + ",\"parkLeftLabel\":\"" + String(lightNames[d.parkLeftStatus < 4 ? d.parkLeftStatus : 3]) + "\"";
+    j += ",\"parkRight\":" + String(d.parkRightStatus) + ",\"parkRightLabel\":\"" + String(lightNames[d.parkRightStatus < 4 ? d.parkRightStatus : 3]) + "\"";
+    j += ",\"fogLeft\":" + String(d.fogLeftStatus) + ",\"fogLeftLabel\":\"" + String(lightNames[d.fogLeftStatus < 4 ? d.fogLeftStatus : 3]) + "\"";
+    j += ",\"fogRight\":" + String(d.fogRightStatus) + ",\"fogRightLabel\":\"" + String(lightNames[d.fogRightStatus < 4 ? d.fogRightStatus : 3]) + "\"";
+    j += ",\"sideRepeaterLeft\":" + String(d.sideRepeaterLeftStatus) + ",\"sideRepeaterLeftLabel\":\"" + String(lightNames[d.sideRepeaterLeftStatus < 4 ? d.sideRepeaterLeftStatus : 3]) + "\"";
+    j += ",\"sideRepeaterRight\":" + String(d.sideRepeaterRightStatus) + ",\"sideRepeaterRightLabel\":\"" + String(lightNames[d.sideRepeaterRightStatus < 4 ? d.sideRepeaterRightStatus : 3]) + "\"";
+    j += ",\"hazardLightRequest\":" + String(d.hazardLightRequest);
+    j += ",\"indicatorLeftRequest\":" + String(d.indicatorLeftRequest);
+    j += ",\"indicatorRightRequest\":" + String(d.indicatorRightRequest);
+    j += "}";
+
+    j += "}";
+    server.send(200, "application/json", j);
+}
+
 static void handleEspNowScan()
 {
     if (server.hasArg("action"))
@@ -1918,6 +1995,7 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
               {
         espnowStartScenario();
         server.send(200, "application/json", "{\"ok\":true}"); });
+    server.on("/can_signals", HTTP_GET, handleCanSignals);
     server.on("/espnow_debug", HTTP_GET, []()
               {
         String r = "espnowInitialized=" + String(espnowInitialized ? "true" : "false") + "\n";
