@@ -1,8 +1,6 @@
 #pragma once
 
-#include <memory>
 #include "can_frame_types.h"
-#include "drivers/can_driver.h"
 #include "can_helpers.h"
 #include "shared_types.h"
 #include "log_buffer.h"
@@ -17,6 +15,8 @@
 
 inline LogRingBuffer logRing;
 
+// ── CRTP base: no virtual methods on the hot path ──
+template <typename Derived>
 struct CarManagerBase
 {
     Shared<bool> Parked{true};
@@ -34,25 +34,36 @@ struct CarManagerBase
 #endif
     }
 
-    virtual void handleMessage(const CanFrame &frame) = 0;
-    virtual const uint32_t *filterIds() const = 0;
-    virtual uint8_t filterIdCount() const = 0;
-    virtual ~CarManagerBase() = default;
+    // CRTP dispatch — zero-overhead, no vtable
+    void handleMessage(const CanFrame &frame)
+    {
+        static_cast<Derived *>(this)->handleMessage(frame);
+    }
+
+    const uint32_t *filterIds() const
+    {
+        return static_cast<const Derived *>(this)->filterIds();
+    }
+
+    uint8_t filterIdCount() const
+    {
+        return static_cast<const Derived *>(this)->filterIdCount();
+    }
 };
 
-struct MyCanHandler : public CarManagerBase
+struct MyCanHandler : public CarManagerBase<MyCanHandler>
 {
     static constexpr uint32_t kFilterIds[] = {
         0x118, 0x257, 0x389, 0x39D, 0x3F5
     };
 
-    const uint32_t *filterIds() const override
+    const uint32_t *filterIds() const
     {
         return kFilterIds;
     }
-    uint8_t filterIdCount() const override { return 5; }
+    uint8_t filterIdCount() const { return 5; }
 
-    void handleMessage(const CanFrame &frame) override
+    void handleMessage(const CanFrame &frame)
     {
         if (onFrame)
             onFrame(frame);

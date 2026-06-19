@@ -23,7 +23,7 @@
 #include "can_helpers.h"
 #include "web/dashboard_ui.h"
 #include "can_translate.h"
-#include "espnow_broadcast.h"
+#include "espnow/broadcast.h"
 
 #ifndef DASH_SSID
 #error "Define -DDASH_SSID in build_flags (e.g. -DDASH_SSID=\\\"ADUnlock-1234\\\")"
@@ -54,7 +54,7 @@ static_assert(sizeof(DASH_PASS) >= 9 && sizeof(DASH_PASS) <= 65, "DASH_PASS must
 
 static Preferences prefs;
 
-static CarManagerBase *dashHandler = nullptr;
+static MyCanHandler *dashHandler = nullptr;
 static CanDriver *dashDriver = nullptr;
 
 static unsigned long rxCount = 0;
@@ -1930,7 +1930,7 @@ static void webTask(void *)
     }
 }
 
-static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
+static void mcpDashboardSetup(MyCanHandler *handler, CanDriver *driver)
 {
     dashHandler = handler;
     dashDriver = driver;

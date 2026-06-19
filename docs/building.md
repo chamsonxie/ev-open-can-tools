@@ -8,15 +8,10 @@ The project is PlatformIO-only. Pick the correct board environment in `platformi
 
 | Env | Board / target | Notes |
 | --- | --- | --- |
-| `feather_rp2040_can` | Adafruit Feather RP2040 CAN | MCP2515-based build, no web dashboard |
-| `feather_m4_can` | Adafruit Feather M4 CAN Express | Native CAN build, no web dashboard |
-| `esp32_twai` | Generic ESP32 dev board | TWAI dashboard build |
-| `lilygo_tcan485_hw3` | LILYGO TCAN485 | TWAI dashboard build with board-specific default pins |
-| `m5stack-atomic-can-base` | M5Stack Atom CAN Base | TWAI dashboard build with RGB status LED |
-| `m5stack-atoms3-mini-can-base` | M5Stack AtomS3 Mini CAN Base | TWAI dashboard build with RGB status LED and built-in injection toggle button |
-| `esp32_feather_v2_mcp2515` | Feather ESP32 V2 + external MCP2515 | Dashboard build using the new MCP2515 driver and web UI |
-| `esp32_ext_mcp2515` | ESP32-S3 + external MCP2515 | Dashboard build for SPI MCP2515 hardware |
 | `waveshare_ESP32_S3_RS485_CAN` | Waveshare ESP32-S3 RS485/CAN | TWAI dashboard build |
+| `native` | Host machine | Native unit tests (Unity framework) |
+| `native_dashboard` | Host machine | Dashboard mode handler tests |
+| `native_log_buffer` | Host machine | Log ring buffer tests |
 
 ## Hardware Notes
 
@@ -42,25 +37,21 @@ Then edit `platformio_profile.h`:
 You can also use the helper script:
 
 ```bash
-python scripts/platformio_set_profile.py --driver DRIVER_ESP32_EXT_MCP2515 --vehicle HW4 --enable EMERGENCY_VEHICLE_DETECTION --enable ENHANCED_AUTOPILOT
+python scripts/platformio_set_profile.py --driver DRIVER_TWAI --vehicle HW4
 ```
-
-Add `--enable INJECTION_AFTER_AP` when `ENHANCED_AUTOPILOT` should wait until AP is active before mux 1 injection.
-
-For `DRIVER_TWAI` dashboard builds, the helper script intentionally enables all optional feature defines so the dashboard can control those options at runtime; the selected vehicle then becomes the default UI mode.
 
 ## Build
 
 ```bash
-pio run -e esp32_ext_mcp2515
+pio run -e waveshare_ESP32_S3_RS485_CAN
 ```
 
-Replace `esp32_ext_mcp2515` with the environment you are targeting.
+Replace `waveshare_ESP32_S3_RS485_CAN` with the environment you are targeting.
 
 ## Flash
 
 ```bash
-pio run -e esp32_ext_mcp2515 -t upload
+pio run -e waveshare_ESP32_S3_RS485_CAN -t upload
 ```
 
 For boards that need a different upload path or boot mode, use the normal PlatformIO upload flow for that board.
@@ -75,6 +66,5 @@ For boards that need a different upload path or boot mode, use the normal Platfo
 
 ## Build Outputs
 
-- RP2040 builds produce a `firmware.uf2`
-- ESP32 and ATSAME51 builds produce a `firmware.bin`
+- ESP32-S3 builds produce a `firmware.bin`
 - Manual dashboard OTA expects a `.bin` built for the exact target board

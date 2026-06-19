@@ -45,8 +45,3 @@
 - `partitions_4mb_ota_1536k.csv`: 4MB flash, 1536KB OTA partition
 - `partitions_8mb_ota_3072k.csv`: 8MB flash, 3072KB OTA partition
 - Chosen per board in `platformio.ini`
-
-## MCP2515 Specifics
-
-- Crystal frequencies: 8MHz or 16MHz (set via `MCP_CRYSTAL_FREQ` define)
-- SPI pin mapping per board (CS, SCK, MISO, MOSI, interrupt)

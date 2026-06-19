@@ -22,7 +22,10 @@ static void app_main_setup()
     }
     appSetup<TWAIDriver>(std::make_unique<TWAIDriver>(twaiTx, twaiRx), "ESP32 TWAI ready @ 500k");
 #ifdef ESP32_DASHBOARD
-    mcpDashboardSetup(appHandler.get(), appDriver.get());
+    {
+        auto &ctx = AppContext::instance();
+        mcpDashboardSetup(ctx.handler.get(), ctx.driver.get());
+    }
 #endif
 }
 

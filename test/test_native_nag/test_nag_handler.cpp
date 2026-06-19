@@ -14,8 +14,13 @@ void tearDown() {}
 
 void test_nag_filter_ids_count()
 {
-    TEST_ASSERT_EQUAL_UINT8(0, handler.filterIdCount());
-    TEST_ASSERT_NULL(handler.filterIds());
+    TEST_ASSERT_EQUAL_UINT8(5, handler.filterIdCount());
+    TEST_ASSERT_NOT_NULL(handler.filterIds());
+    TEST_ASSERT_EQUAL_UINT32(0x118, handler.filterIds()[0]);
+    TEST_ASSERT_EQUAL_UINT32(0x257, handler.filterIds()[1]);
+    TEST_ASSERT_EQUAL_UINT32(0x389, handler.filterIds()[2]);
+    TEST_ASSERT_EQUAL_UINT32(0x39D, handler.filterIds()[3]);
+    TEST_ASSERT_EQUAL_UINT32(0x3F5, handler.filterIds()[4]);
 }
 
 int main()
