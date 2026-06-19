@@ -99,13 +99,7 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 .subsec.collapsed .subsec-head{margin-bottom:0}
 .subsec.collapsed .subsec-body{display:none}
 
-/* 信号面板行 */
-.sig-row{display:flex;flex-wrap:wrap;gap:4px 16px;padding:3px 0}
-.sig-lbl{font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.3px;margin-right:2px;min-width:32px}
-.sig-val{font-size:13px;font-weight:600;color:var(--tx);min-width:42px}
-.sig-act{color:var(--ok)}
-.sig-brake{color:var(--err)}
-.sig-warn{color:var(--warn)}
+
 
 /* 速度选项 */
 .pills{display:flex;gap:6px;flex-wrap:wrap}
@@ -566,15 +560,6 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
         暗号: <code style="background:var(--bg);padding:2px 6px;border-radius:4px">chamsonxie</code><br>
         接收端设备需广播此暗号才能被本设备发现。
       </div>
-    </div>
-  </div>
-</div>
-
-<div class="card">
-  <div class="card-hdr"><div class="card-title">ESP-NOW 发送信号 <span class="title-help" onclick="return toggleHelp(this,event)" title="实时显示通过ESP-NOW广播的CAN信号值。数据每3秒从设备刷新一次。">?</span></div><div class="card-meta" id="espnow-sig-meta">—</div></div>
-  <div style="padding:0">
-    <div id="espnow-signals" style="line-height:1.8;font-size:13px">
-      <div style="padding:20px;text-align:center;color:var(--tx3);font-size:12px">等待信号数据...</div>
     </div>
   </div>
 </div>
@@ -2449,34 +2434,19 @@ async function peReset(){
 }
 
 
-let espNowState={
-  scanning:false,discovered:[],paired:null,
-  scenarioRunning:false,scenarioStep:0,
-  gear:0,accel:0,regen:0,speed:0,uiSpeed:0,
-  brakeRod:0,brakeApply:0,
-  turnL:0,turnR:0,
-  collisionWarning:0,lssState:0,driverInteraction:0,accSpeedLimit:0
-};
+let espNowState={scanning:false,discovered:[],paired:null};
 
 async function pollEspNow(){
   return runPoll('espnow',async()=>{
     if(!dashboardStatusOk)return;
     try{
       const d=await fetchPollJson('/espnow_status',3000);
+      console.log('[ESPNOW] poll ok',d);
       espNowState.scanning=d.scanning;
       espNowState.discovered=d.discovered||[];
       espNowState.paired=d.paired||null;
-      espNowState.scenarioRunning=d.scenarioRunning;
-      espNowState.scenarioStep=d.scenarioStep;
-      espNowState.gear=d.gear; espNowState.accel=d.accel; espNowState.regen=d.regen;
-      espNowState.speed=d.speed; espNowState.uiSpeed=d.uiSpeed;
-      espNowState.brakeRod=d.brakeRod; espNowState.brakeApply=d.brakeApply;
-      espNowState.turnL=d.turnL; espNowState.turnR=d.turnR;
-      espNowState.collisionWarning=d.collisionWarning; espNowState.lssState=d.lssState;
-      espNowState.driverInteraction=d.driverInteraction; espNowState.accSpeedLimit=d.accSpeedLimit;
       renderEspNow();
       updateEspNowMeta();
-      renderEspNowSignals();
     }catch(e){
       console.warn('[ESPNOW] poll error',e);
     }
@@ -2525,7 +2495,7 @@ function updateEspNowMeta(){
   const scenarioEl=$('espnow-scenario-status');
   const scenarioBtn=$('espnow-scenario-btn');
   if(espNowState.scenarioRunning){
-    if(scenarioEl)scenarioEl.textContent='模拟进行中 (step '+espNowState.scenarioStep+') speed='+espNowState.speed+' accel='+espNowState.accel+' brake='+espNowState.brakeApply+' turnL='+espNowState.turnL+' turnR='+espNowState.turnR;
+    if(scenarioEl)scenarioEl.textContent='模拟进行中 (step '+espNowState.scenarioStep+') speed='+espNowState.curSpeed+' throttle='+espNowState.curThrottle+' brake='+espNowState.curBrake+' left='+espNowState.curTurnLeft+' right='+espNowState.curTurnRight;
     if(scenarioBtn){scenarioBtn.textContent='模拟运行中...';scenarioBtn.disabled=true;}
   }else{
     if(scenarioEl)scenarioEl.textContent='';
@@ -2536,48 +2506,6 @@ function updateEspNowMeta(){
     btn.textContent=espNowState.scanning?'停止扫描':'开始扫描';
     btn.classList.toggle('paused',espNowState.scanning);
   }
-}
-
-function sigName(v,names){return names[v]!==undefined?names[v]:'?'+v;}
-
-function renderEspNowSignals(){
-  const el=$('espnow-signals');
-  const meta=$('espnow-sig-meta');
-  if(!el)return;
-  const s=espNowState;
-  const gearNames=['无效','P','R','N','D','','','SNA'];
-  const brakeNames=['未初始化','未制动','制动中','故障'];
-  const lssNames=['故障','LDW','LKA','ELK','监控','盲区','中止','关闭'];
-  const collNames=['无','前方车辆','行人','','','','','切入'];
-  const onOff=['关','开'];
-  const rows = [
-    `<div class="sig-row">
-      <span class="sig-lbl">档位</span><span class="sig-val${s.gear===4?' sig-act':''}">${sigName(s.gear,gearNames)}</span>
-      <span class="sig-lbl">车速</span><span class="sig-val">${s.speed}</span>
-      <span class="sig-lbl">显示</span><span class="sig-val">${s.uiSpeed}</span>
-    </div>`,
-    `<div class="sig-row">
-      <span class="sig-lbl">油门</span><span class="sig-val">${s.accel}%</span>
-      <span class="sig-lbl">动能回收</span><span class="sig-val${s.regen?' sig-act':''}">${onOff[s.regen]||'?'}</span>
-      <span class="sig-lbl">制动</span><span class="sig-val${s.brakeApply===2?' sig-brake':''}">${sigName(s.brakeApply,brakeNames)}</span>
-    </div>`,
-    `<div class="sig-row">
-      <span class="sig-lbl">踏板行程</span><span class="sig-val">${s.brakeRod}mm</span>
-      <span class="sig-lbl">左转灯</span><span class="sig-val${s.turnL?' sig-act':''}">${sigName(s.turnL,onOff)}</span>
-      <span class="sig-lbl">右转灯</span><span class="sig-val${s.turnR?' sig-act':''}">${sigName(s.turnR,onOff)}</span>
-    </div>`,
-    `<div class="sig-row">
-      <span class="sig-lbl">碰撞预警</span><span class="sig-val${s.collisionWarning?' sig-warn':''}">${sigName(s.collisionWarning,collNames)}</span>
-      <span class="sig-lbl">车道辅助</span><span class="sig-val">${sigName(s.lssState,lssNames)}</span>
-      <span class="sig-lbl">驾驶交互</span><span class="sig-val${s.driverInteraction===2?' sig-warn':''}">${s.driverInteraction===0?'交互中':s.driverInteraction===1?'正常':'长时间未交互'}</span>
-    </div>`,
-    `<div class="sig-row">
-      <span class="sig-lbl">ACC限速</span><span class="sig-val">${s.accSpeedLimit}mph</span>
-    </div>`
-  ];
-  el.innerHTML = rows.join('');
-  meta.textContent = s.scenarioRunning?'模拟中':'实时';
-  meta.style.color = s.scenarioRunning?'var(--acc)':'';
 }
 
 async function toggleEspNowScan(){

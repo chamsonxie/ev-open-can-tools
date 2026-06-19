@@ -27,9 +27,9 @@ struct __attribute__((packed)) EspNowDiscoveryPkt
 };
 
 // ═══════════════════════════════════════════════════════════════
-// ESP-NOW CAN Data Packet — signals from 6 selected CAN IDs
+// ESP-NOW CAN Data Packet — signals from 5 selected CAN IDs
 // ═══════════════════════════════════════════════════════════════
-// Total size: 41 bytes (well within ESP-NOW 250-byte limit)
+// Total size: 47 bytes (well within ESP-NOW 250-byte limit)
 //
 // Field layout:
 //   Offset  Size  Description
@@ -40,33 +40,25 @@ struct __attribute__((packed)) EspNowDiscoveryPkt
 //   6       1     accelPedalPos (raw*0.4=%)               [0x118 DI_systemStatus]
 //   7       1     regenLight (0=off, 1=on)                [0x118 DI_systemStatus]
 //   8       1     brakePedalState (0=release,1=pressed)   [0x118 DI_systemStatus]
-//   9       2     steeringAngle (raw*0.1-819.2=deg)       [0x129 SCCM_steeringAngleSensor]
-//   11      2     steeringAngleSpeed (raw*0.5-4096=deg/s) [0x129 SCCM_steeringAngleSensor]
-//   13      2     vehicleSpeed (raw*0.08-40=km/h)         [0x257 DI_speed]
-//   15      1     uiSpeed (raw*1=display speed)           [0x257 DI_speed]
-//   16      2     brakeRodTravel (scaled -5~47mm)          [0x39D IBST_status]
-//   18      1     driverBrakeApply (0=uninit,1=no,2=yes)  [0x39D IBST_status]
-//   19      4     0x389 signals (longCollisionWarning, lssState, driverInteractionLevel, accSpeedLimit)
-//   23      1     lowBeamLeftStatus                       [0x3F5 VCFRONT_lighting]
-//   24      1     lowBeamRightStatus                      [0x3F5 VCFRONT_lighting]
-//   25      1     highBeamLeftStatus                      [0x3F5 VCFRONT_lighting]
-//   26      1     highBeamRightStatus                     [0x3F5 VCFRONT_lighting]
-//   27      1     drlLeftStatus                           [0x3F5 VCFRONT_lighting]
-//   28      1     drlRightStatus                          [0x3F5 VCFRONT_lighting]
-//   29      1     turnSignalLeftStatus                    [0x3F5 VCFRONT_lighting]
-//   30      1     turnSignalRightStatus                   [0x3F5 VCFRONT_lighting]
-//   31      1     parkLeftStatus                          [0x3F5 VCFRONT_lighting]
-//   32      1     parkRightStatus                         [0x3F5 VCFRONT_lighting]
-//   33      1     fogLeftStatus                           [0x3F5 VCFRONT_lighting]
-//   34      1     fogRightStatus                          [0x3F5 VCFRONT_lighting]
-//   35      1     sideRepeaterLeftStatus                  [0x3F5 VCFRONT_lighting]
-//   36      1     sideRepeaterRightStatus                 [0x3F5 VCFRONT_lighting]
-//   37      1     hazardLightRequest                      [0x3F5 VCFRONT_lighting]
-//   38      1     indicatorLeftRequest                    [0x3F5 VCFRONT_lighting]
-//   39      1     indicatorRightRequest                   [0x3F5 VCFRONT_lighting]
-//   40      1     chksum (XOR of bytes 0..39)
+//   9       1     systemState (0=POWERON,1=STANDBY,...)   [0x118 DI_systemStatus]
+//   10      1     tractionControlMode (0=OFF,...)         [0x118 DI_systemStatus]
+//   11      1     epbRequest (0=release,1=apply,...)      [0x118 DI_systemStatus]
+//   12      1     trackModeState                           [0x118 DI_systemStatus]
+//   13      1     immobilizerState                         [0x118 DI_systemStatus]
+//   14      1     proximity                                [0x118 DI_systemStatus]
+//   15      1     keepAliveRequest                         [0x118 DI_systemStatus]
+//   16      2     vehicleSpeed (raw*0.08-40=km/h)         [0x257 DI_speed]
+//   18      1     uiSpeed (raw*1=display speed)           [0x257 DI_speed]
+//   19      1     uiSpeedUnits (0=mph,1=km/h)             [0x257 DI_speed]
+//   20      2     brakeRodTravel (scaled -5~47mm)          [0x39D IBST_status]
+//   22      1     driverBrakeApply (0=uninit,1=no,2=yes)  [0x39D IBST_status]
+//   23      1     internalState (IBST internal state)      [0x39D IBST_status]
+//   24      1     iBoosterStatus (IBST health)             [0x39D IBST_status]
+//   25      4     0x389 signals (longCollisionWarning, lssState, driverInteractionLevel, accSpeedLimit)
+//   29     17     0x3F5 VCFRONT_lighting (17 byte fields)
+//   46      1     chksum (XOR of bytes 0..45)
 //   ──────  ────
-//   41      bytes total
+//   47      bytes total
 // ═══════════════════════════════════════════════════════════════
 struct __attribute__((packed)) EspNowCanDataPkt
 {
@@ -78,18 +70,24 @@ struct __attribute__((packed)) EspNowCanDataPkt
     uint8_t accelPedalPos;      // raw*0.4=%
     uint8_t regenLight;         // 0=off,1=on
     uint8_t brakePedalState;    // 0=release,1=pressed,2=invalid
-
-    // 0x129 SCCM_steeringAngleSensor
-    int16_t steeringAngle;       // raw*0.1-819.2=deg
-    int16_t steeringAngleSpeed;  // raw*0.5-4096=deg/s
+    uint8_t systemState;        // 0=POWERON,1=STANDBY,2=CHARGING,3=PARK,4=DRIVE,5=REVERSE
+    uint8_t tractionControlMode;// 0=OFF,1=SLIP,2=TRACTION,3=STABILITY
+    uint8_t epbRequest;         // 0=release,1=apply,2=applySNA,3=SNA
+    uint8_t trackModeState;     // 0=inactive,1=active,2=disabled,3=SNA
+    uint8_t immobilizerState;   // 0=disabled,1=enabled,2=notPaired,3=invalid
+    uint8_t proximity;          // 0=notPresent,1=present,2=inRange,3=SNA
+    uint8_t keepAliveRequest;   // 0-1
 
     // 0x257 DI_speed
     uint16_t vehicleSpeed;       // raw*0.08-40=km/h, 4095=SNA
     uint8_t uiSpeed;             // raw*1=display speed, 255=SNA
+    uint8_t uiSpeedUnits;        // 0=mph,1=km/h
 
     // 0x39D IBST_status
     int16_t brakeRodTravel;      // raw*0.015625-5.0=mm
     uint8_t driverBrakeApply;    // 0=uninit,1=no,2=yes,3=fault
+    uint8_t internalState;       // IBST internal state
+    uint8_t iBoosterStatus;      // IBST health status
 
     // 0x389 DAS_status2
     uint8_t longCollisionWarning;      // 4 bits (stored as is)
@@ -119,7 +117,7 @@ struct __attribute__((packed)) EspNowCanDataPkt
     uint8_t chksum;
 };
 
-static_assert(sizeof(EspNowCanDataPkt) == 41, "EspNowCanDataPkt size mismatch");
+static_assert(sizeof(EspNowCanDataPkt) == 47, "EspNowCanDataPkt size mismatch");
 
 struct EspNowDiscoveredDev
 {
@@ -237,25 +235,38 @@ static void espnowUpdateFromFrame(const CanFrame &frame)
 {
     if (frame.dlc < 4) return;
 
-    // 0x118 DI_systemStatus: gear, accelPedalPos, regenLight, brakePedalState
+    // 0x118 DI_systemStatus: gear, accelPedalPos, regenLight, brakePedalState,
+    //     systemState, tractionControlMode, epbRequest, trackModeState,
+    //     immobilizerState, proximity, keepAliveRequest
     // DBC: gear=21|3@1+, accelPedalPos=32|8@1+, regenLight=26|1@1+, brakePedalState=19|2@1+
+    //      systemState=16|3@1+, tractionControlMode=40|3@1+, epbRequest=44|2@1+,
+    //      trackModeState=48|2@1+, immobilizerState=27|3@1+, proximity=46|1@1+,
+    //      keepAliveRequest=47|1@1+
     if (frame.id == 280 || frame.id == 0x118)
     {
-        if (frame.dlc < 5) return;
-        espnowCurData.gear            = (frame.data[2] >> 5) & 0x07;
-        espnowCurData.accelPedalPos   = frame.data[4];
-        espnowCurData.regenLight      = (frame.data[3] >> 2) & 0x01;
-        espnowCurData.brakePedalState = (frame.data[2] >> 3) & 0x03;
+        if (frame.dlc < 7) return;
+        espnowCurData.gear                = (frame.data[2] >> 5) & 0x07;
+        espnowCurData.accelPedalPos       = frame.data[4];
+        espnowCurData.regenLight          = (frame.data[3] >> 2) & 0x01;
+        espnowCurData.brakePedalState     = (frame.data[2] >> 3) & 0x03;
+        espnowCurData.systemState         = frame.data[2] & 0x07;
+        espnowCurData.tractionControlMode = frame.data[5] & 0x07;
+        espnowCurData.epbRequest          = (frame.data[5] >> 4) & 0x03;
+        espnowCurData.trackModeState      = frame.data[6] & 0x03;
+        espnowCurData.immobilizerState    = (frame.data[3] >> 3) & 0x07;
+        espnowCurData.proximity           = (frame.data[5] >> 6) & 0x01;
+        espnowCurData.keepAliveRequest    = (frame.data[5] >> 7) & 0x01;
         return;
     }
 
-    // 0x257 DI_speed: vehicleSpeed, uiSpeed
-    // DBC: vehicleSpeed=12|12@1+ (0.08,-40), uiSpeed=24|8@1+
+    // 0x257 DI_speed: vehicleSpeed, uiSpeed, uiSpeedUnits
+    // DBC: vehicleSpeed=12|12@1+ (0.08,-40), uiSpeed=24|8@1+, uiSpeedUnits=32|1@1+
     if (frame.id == 599 || frame.id == 0x257)
     {
         if (frame.dlc < 5) return;
-        espnowCurData.vehicleSpeed = (uint16_t)extractIntel(frame.data, 12, 12);
-        espnowCurData.uiSpeed      = frame.data[3];
+        espnowCurData.vehicleSpeed  = (uint16_t)extractIntel(frame.data, 12, 12);
+        espnowCurData.uiSpeed       = frame.data[3];
+        espnowCurData.uiSpeedUnits  = (frame.data[4] >> 0) & 0x01;
         return;
     }
 
@@ -273,13 +284,15 @@ static void espnowUpdateFromFrame(const CanFrame &frame)
         return;
     }
 
-    // 0x39D IBST_status: driverBrakeApply, brakeRodTravel
-    // DBC: driverBrakeApply=16|2@1+, brakeRodTravel=21|12@1+
+    // 0x39D IBST_status: driverBrakeApply, brakeRodTravel, internalState, iBoosterStatus
+    // DBC: driverBrakeApply=16|2@1+, brakeRodTravel=21|12@1+, internalState=18|3@1+, iBoosterStatus=12|3@1+
     if (frame.id == 925 || frame.id == 0x39D)
     {
         if (frame.dlc < 3) return;
         espnowCurData.driverBrakeApply = (uint8_t)extractIntel(frame.data, 16, 2);
         espnowCurData.brakeRodTravel   = (int16_t)extractIntel(frame.data, 21, 12);
+        espnowCurData.internalState    = (frame.data[2] >> 2) & 0x07;
+        espnowCurData.iBoosterStatus   = (frame.data[1] >> 4) & 0x07;
         return;
     }
 

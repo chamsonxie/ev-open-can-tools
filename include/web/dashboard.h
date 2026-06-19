@@ -573,7 +573,7 @@ static void handleFrames()
                 j += ",";
             j += String(f.data[b]);
         }
-        char trans[128] = {0};
+        char trans[256] = {0};
         formatCanTranslation(f.id, f.data, f.dlc, trans, sizeof(trans));
         j += "],\"name\":\"" + jsonEscape(decodeCanId(f.id)) +
              "\",\"trans\":\"" + jsonEscape(trans) + "\"}";
@@ -1742,20 +1742,33 @@ static void handleEspNowStatus()
     j += ",\"scenarioRunning\":" + String(espnowScenarioActive ? "true" : "false");
     j += ",\"scenarioStep\":" + String(espnowScenarioStep);
 
-    // Signal values
+    // Signal values — 0x118 DI_systemStatus
     j += ",\"gear\":" + String(d.gear);
     j += ",\"accel\":" + String(d.accelPedalPos);
     j += ",\"regen\":" + String(d.regenLight);
     j += ",\"brakePedal\":" + String(d.brakePedalState);
-
+    j += ",\"systemState\":" + String(d.systemState);
+    j += ",\"tractionControl\":" + String(d.tractionControlMode);
+    j += ",\"epbRequest\":" + String(d.epbRequest);
+    j += ",\"trackMode\":" + String(d.trackModeState);
+    j += ",\"immobilizer\":" + String(d.immobilizerState);
+    j += ",\"proximity\":" + String(d.proximity);
+    j += ",\"keepAlive\":" + String(d.keepAliveRequest);
+    // 0x257 DI_speed
     j += ",\"speed\":" + String(d.vehicleSpeed);
     j += ",\"uiSpeed\":" + String(d.uiSpeed);
+    j += ",\"uiSpeedUnits\":" + String(d.uiSpeedUnits);
+    // 0x389 DAS_status2
     j += ",\"collisionWarning\":" + String(d.longCollisionWarning);
     j += ",\"lssState\":" + String(d.lssState);
     j += ",\"driverInteraction\":" + String(d.driverInteractionLevel);
     j += ",\"accSpeedLimit\":" + String(d.accSpeedLimit);
+    // 0x39D IBST_status
     j += ",\"brakeRod\":" + String(d.brakeRodTravel);
     j += ",\"brakeApply\":" + String(d.driverBrakeApply);
+    j += ",\"internalState\":" + String(d.internalState);
+    j += ",\"iBoosterStatus\":" + String(d.iBoosterStatus);
+    // 0x3F5 VCFRONT_lighting
     j += ",\"turnL\":" + String(d.turnSignalLeftStatus);
     j += ",\"turnR\":" + String(d.turnSignalRightStatus);
     j += "}";
