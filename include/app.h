@@ -94,21 +94,39 @@ static void appLoop()
 
     CanFrame frame;
     CarManagerBase *h = appActiveHandler ? appActiveHandler : appHandler.get();
-    uint8_t framesThisLoop = 0;
+
+    CanFrame batch[48];
+    uint32_t batchIds[48];
+    uint8_t batchCount = 0;
+    uint32_t totalRead = 0;
+
     while (appDriver->read(frame))
     {
         if (frame.bus == CAN_BUS_ANY)
             frame.bus = CAN_BUS_DEFAULT;
-        digitalWrite(PIN_LED, LOW);
-        h->frameCount++;
-        h->handleMessage(frame);
-#if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD)
-        if (++framesThisLoop >= 32)
+        totalRead++;
+
+        bool dup = false;
+        for (uint8_t i = 0; i < batchCount; i++)
         {
-            taskYIELD();
-            break;
+            if (batchIds[i] == frame.id)
+            {
+                batch[i] = frame;
+                dup = true;
+                break;
+            }
         }
-#endif
+        if (!dup && batchCount < 48)
+        {
+            batch[batchCount] = frame;
+            batchIds[batchCount] = frame.id;
+            batchCount++;
+        }
     }
+
+    h->frameCount += totalRead;
+    digitalWrite(PIN_LED, LOW);
+    for (uint8_t i = 0; i < batchCount; i++)
+        h->handleMessage(batch[i]);
     digitalWrite(PIN_LED, HIGH);
 }
