@@ -27,128 +27,99 @@ struct __attribute__((packed)) EspNowDiscoveryPkt
 };
 
 // ═══════════════════════════════════════════════════════════════
-// ESP-NOW CAN Data Packet — contains all signals from my-dbc-sign.csv
+// ESP-NOW CAN Data Packet — signals from 6 selected CAN IDs
 // ═══════════════════════════════════════════════════════════════
-// Total size: 53 bytes (well within ESP-NOW 250-byte limit)
+// Total size: 41 bytes (well within ESP-NOW 250-byte limit)
 //
 // Field layout:
 //   Offset  Size  Description
 //   ──────  ────  ───────────
 //   0       1     type (0x01 = CAN_DATA)
 //   1       4     seq (monotonic counter)
-//   5       2     vehicleSpeed (raw*0.5=km/h, 1023=SNA)  [0x155 ESP_B]
-//   7       1     standstill (0=no, 1=yes)                [0x155 ESP_B]
-//   8       1     gear (0=INV,1=P,2=R,3=N,4=D,7=SNA)     [0x118 DI_systemStatus]
-//   9       1     accelPedalPos (raw*0.4=%)               [0x118 DI_systemStatus]
-//   10      1     regenLight (0=off, 1=on)                [0x118 DI_systemStatus]
-//   11      2     steeringAngle (raw*0.1-819.2=deg)       [0x129 SCCM_steeringAngleSensor]
-//   13      2     steeringAngleSpeed (raw*0.5-4096=deg/s) [0x129 SCCM_steeringAngleSensor]
-//   15      1     buckleStatus (0=unbuckled, 1=buckled)   [0x311 UI_warning]
-//   16      1     leftBlinkerBlinking (0/1/2)             [0x311 UI_warning]
-//   17      1     rightBlinkerBlinking (0/1/2)            [0x311 UI_warning]
-//   18      1     anyDoorOpen (0=closed, 1=open)          [0x311 UI_warning]
-//   19      1     uiHighBeam (0=off, 1=on)                [0x311 UI_warning]
-//   20      1     laneDepartureWarning (0=none,1=left..)   [0x39B DAS_status]
-//   21      1     sideCollisionWarning (0=none,1=left..)   [0x39B DAS_status]
-//   22      1     forwardCollisionWarning (0=none,1=warn)  [0x39B DAS_status]
-//   23      1     suppressSpeedWarning (0=no, 1=yes)      [0x39B DAS_status]
-//   24      1     blindSpotRearRight (0=none,1=1级,2=2级)  [0x39B DAS_status]
-//   25      1     blindSpotRearLeft  (0=none,1=1级,2=2级)  [0x39B DAS_status]
-//   26      2     brakeRodTravel (scaled -5~47mm)          [0x39D IBST_status]
-//   28      1     driverBrakeApply (0=uninit,1=no,2=yes)   [0x39D IBST_status]
-//   29      1     highBeamSwitchActive                     [0x3F5 VCFRONT_lighting]
-//   30      1     parkRightStatus                          [0x3F5 VCFRONT_lighting]
-//   31      1     parkLeftStatus                           [0x3F5 VCFRONT_lighting]
-//   32      1     turnSignalRightStatus                    [0x3F5 VCFRONT_lighting]
-//   33      1     turnSignalLeftStatus                     [0x3F5 VCFRONT_lighting]
-//   34      1     sideRepeaterRightStatus                  [0x3F5 VCFRONT_lighting]
-//   35      1     sideRepeaterLeftStatus                   [0x3F5 VCFRONT_lighting]
-//   36      1     fogRightStatus                           [0x3F5 VCFRONT_lighting]
-//   37      1     fogLeftStatus                            [0x3F5 VCFRONT_lighting]
-//   38      1     drlRightStatus                           [0x3F5 VCFRONT_lighting]
-//   39      1     drlLeftStatus                            [0x3F5 VCFRONT_lighting]
-//   40      1     highBeamRightStatus                      [0x3F5 VCFRONT_lighting]
-//   41      1     highBeamLeftStatus                       [0x3F5 VCFRONT_lighting]
-//   42      1     lowBeamRightStatus                       [0x3F5 VCFRONT_lighting]
-//   43      1     lowBeamLeftStatus                        [0x3F5 VCFRONT_lighting]
-//   44      1     hazardSwitchBacklight                    [0x3F5 VCFRONT_lighting]
-//   45      1     seeYouHomeLightingReq                    [0x3F5 VCFRONT_lighting]
-//   46      1     approachLightingRequest                  [0x3F5 VCFRONT_lighting]
-//   47      1     switchLightingBrightness                 [0x3F5 VCFRONT_lighting]
-//   48      1     ambientLightingBrightness                [0x3F5 VCFRONT_lighting]
-//   49      1     hazardLightRequest                       [0x3F5 VCFRONT_lighting]
-//   50      1     indicatorRightRequest                    [0x3F5 VCFRONT_lighting]
-//   51      1     indicatorLeftRequest                     [0x3F5 VCFRONT_lighting]
-//   52      1     chksum (XOR of bytes 0..51)
+//   5       1     gear (0=INV,1=P,2=R,3=N,4=D,7=SNA)     [0x118 DI_systemStatus]
+//   6       1     accelPedalPos (raw*0.4=%)               [0x118 DI_systemStatus]
+//   7       1     regenLight (0=off, 1=on)                [0x118 DI_systemStatus]
+//   8       1     brakePedalState (0=release,1=pressed)   [0x118 DI_systemStatus]
+//   9       2     steeringAngle (raw*0.1-819.2=deg)       [0x129 SCCM_steeringAngleSensor]
+//   11      2     steeringAngleSpeed (raw*0.5-4096=deg/s) [0x129 SCCM_steeringAngleSensor]
+//   13      2     vehicleSpeed (raw*0.08-40=km/h)         [0x257 DI_speed]
+//   15      1     uiSpeed (raw*1=display speed)           [0x257 DI_speed]
+//   16      2     brakeRodTravel (scaled -5~47mm)          [0x39D IBST_status]
+//   18      1     driverBrakeApply (0=uninit,1=no,2=yes)  [0x39D IBST_status]
+//   19      4     0x389 signals (longCollisionWarning, lssState, driverInteractionLevel, accSpeedLimit)
+//   23      1     lowBeamLeftStatus                       [0x3F5 VCFRONT_lighting]
+//   24      1     lowBeamRightStatus                      [0x3F5 VCFRONT_lighting]
+//   25      1     highBeamLeftStatus                      [0x3F5 VCFRONT_lighting]
+//   26      1     highBeamRightStatus                     [0x3F5 VCFRONT_lighting]
+//   27      1     drlLeftStatus                           [0x3F5 VCFRONT_lighting]
+//   28      1     drlRightStatus                          [0x3F5 VCFRONT_lighting]
+//   29      1     turnSignalLeftStatus                    [0x3F5 VCFRONT_lighting]
+//   30      1     turnSignalRightStatus                   [0x3F5 VCFRONT_lighting]
+//   31      1     parkLeftStatus                          [0x3F5 VCFRONT_lighting]
+//   32      1     parkRightStatus                         [0x3F5 VCFRONT_lighting]
+//   33      1     fogLeftStatus                           [0x3F5 VCFRONT_lighting]
+//   34      1     fogRightStatus                          [0x3F5 VCFRONT_lighting]
+//   35      1     sideRepeaterLeftStatus                  [0x3F5 VCFRONT_lighting]
+//   36      1     sideRepeaterRightStatus                 [0x3F5 VCFRONT_lighting]
+//   37      1     hazardLightRequest                      [0x3F5 VCFRONT_lighting]
+//   38      1     indicatorLeftRequest                    [0x3F5 VCFRONT_lighting]
+//   39      1     indicatorRightRequest                   [0x3F5 VCFRONT_lighting]
+//   40      1     chksum (XOR of bytes 0..39)
 //   ──────  ────
-//   53      bytes total
+//   41      bytes total
 // ═══════════════════════════════════════════════════════════════
 struct __attribute__((packed)) EspNowCanDataPkt
 {
     uint8_t type;       // 0 = ESP_NOW_PKT_CAN_DATA
     uint32_t seq;       // sequence counter
 
-    // 0x155 ESP_B
-    uint16_t vehicleSpeed;      // raw*0.5=km/h, 1023=SNA
-    uint8_t standstill;         // 0=not, 1=standstill
-
     // 0x118 DI_systemStatus
     uint8_t gear;               // 0=INV,1=P,2=R,3=N,4=D,7=SNA
     uint8_t accelPedalPos;      // raw*0.4=%
     uint8_t regenLight;         // 0=off,1=on
+    uint8_t brakePedalState;    // 0=release,1=pressed,2=invalid
 
     // 0x129 SCCM_steeringAngleSensor
     int16_t steeringAngle;       // raw*0.1-819.2=deg
     int16_t steeringAngleSpeed;  // raw*0.5-4096=deg/s
 
-    // 0x311 UI_warning
-    uint8_t buckleStatus;
-    uint8_t leftBlinkerBlinking;
-    uint8_t rightBlinkerBlinking;
-    uint8_t anyDoorOpen;
-    uint8_t uiHighBeam;
-
-    // 0x39B DAS_status
-    uint8_t laneDepartureWarning;
-    uint8_t sideCollisionWarning;
-    uint8_t forwardCollisionWarning;
-    uint8_t suppressSpeedWarning;
-    uint8_t blindSpotRearRight;
-    uint8_t blindSpotRearLeft;
+    // 0x257 DI_speed
+    uint16_t vehicleSpeed;       // raw*0.08-40=km/h, 4095=SNA
+    uint8_t uiSpeed;             // raw*1=display speed, 255=SNA
 
     // 0x39D IBST_status
-    int16_t brakeRodTravel;
-    uint8_t driverBrakeApply;
+    int16_t brakeRodTravel;      // raw*0.015625-5.0=mm
+    uint8_t driverBrakeApply;    // 0=uninit,1=no,2=yes,3=fault
+
+    // 0x389 DAS_status2
+    uint8_t longCollisionWarning;      // 4 bits (stored as is)
+    uint8_t lssState;                  // 3 bits (stored as is)
+    uint8_t driverInteractionLevel;    // 2 bits (stored as is)
+    uint8_t accSpeedLimit;             // 0-255 (raw*0.4=mph, DBC uses 10 bits but 8 is sufficient)
 
     // 0x3F5 VCFRONT_lighting
-    uint8_t highBeamSwitchActive;
-    uint8_t parkRightStatus;
-    uint8_t parkLeftStatus;
-    uint8_t turnSignalRightStatus;
-    uint8_t turnSignalLeftStatus;
-    uint8_t sideRepeaterRightStatus;
-    uint8_t sideRepeaterLeftStatus;
-    uint8_t fogRightStatus;
-    uint8_t fogLeftStatus;
-    uint8_t drlRightStatus;
-    uint8_t drlLeftStatus;
-    uint8_t highBeamRightStatus;
-    uint8_t highBeamLeftStatus;
+    uint8_t lowBeamLeftStatus;      // 0=off,1=on,2=fault,3=SNA
     uint8_t lowBeamRightStatus;
-    uint8_t lowBeamLeftStatus;
-    uint8_t hazardSwitchBacklight;
-    uint8_t seeYouHomeLightingReq;
-    uint8_t approachLightingRequest;
-    uint8_t switchLightingBrightness;
-    uint8_t ambientLightingBrightness;
+    uint8_t highBeamLeftStatus;
+    uint8_t highBeamRightStatus;
+    uint8_t drlLeftStatus;
+    uint8_t drlRightStatus;
+    uint8_t turnSignalLeftStatus;
+    uint8_t turnSignalRightStatus;
+    uint8_t parkLeftStatus;
+    uint8_t parkRightStatus;
+    uint8_t fogLeftStatus;
+    uint8_t fogRightStatus;
+    uint8_t sideRepeaterLeftStatus;
+    uint8_t sideRepeaterRightStatus;
     uint8_t hazardLightRequest;
-    uint8_t indicatorRightRequest;
     uint8_t indicatorLeftRequest;
+    uint8_t indicatorRightRequest;
 
     uint8_t chksum;
 };
 
-static_assert(sizeof(EspNowCanDataPkt) == 53, "EspNowCanDataPkt size mismatch");
+static_assert(sizeof(EspNowCanDataPkt) == 41, "EspNowCanDataPkt size mismatch");
 
 struct EspNowDiscoveredDev
 {
@@ -266,95 +237,90 @@ static void espnowUpdateFromFrame(const CanFrame &frame)
 {
     if (frame.dlc < 4) return;
 
-    // 0x155 ESP_B: speed + standstill
-    if (frame.id == 341 || frame.id == 0x155)
-    {
-        if (frame.dlc < 6) return;
-        espnowCurData.vehicleSpeed = (uint16_t)extractIntel(frame.data, 42, 10);
-        espnowCurData.standstill = (uint8_t)extractIntel(frame.data, 41, 1);
-        return;
-    }
-
-    // 0x118 DI_systemStatus: gear, accel, regen
+    // 0x118 DI_systemStatus: gear, accelPedalPos, regenLight, brakePedalState
+    // DBC: gear=21|3@1+, accelPedalPos=32|8@1+, regenLight=26|1@1+, brakePedalState=19|2@1+
     if (frame.id == 280 || frame.id == 0x118)
     {
         if (frame.dlc < 5) return;
-        espnowCurData.gear = (frame.data[2] >> 5) & 0x07;
-        espnowCurData.accelPedalPos = frame.data[4];
-        espnowCurData.regenLight = (frame.data[3] >> 2) & 0x01;
+        espnowCurData.gear            = (frame.data[2] >> 5) & 0x07;
+        espnowCurData.accelPedalPos   = frame.data[4];
+        espnowCurData.regenLight      = (frame.data[3] >> 2) & 0x01;
+        espnowCurData.brakePedalState = (frame.data[2] >> 3) & 0x03;
         return;
     }
 
-    // 0x129 SCCM_steeringAngleSensor
+    // 0x129 SCCM_steeringAngleSensor: steeringAngle, steeringAngleSpeed
+    // DBC: steeringAngle=16|14@1+, steeringAngleSpeed=32|14@1+
     if (frame.id == 297 || frame.id == 0x129)
     {
         if (frame.dlc < 6) return;
-        espnowCurData.steeringAngle = (int16_t)extractIntel(frame.data, 16, 14);
+        espnowCurData.steeringAngle      = (int16_t)extractIntel(frame.data, 16, 14);
         espnowCurData.steeringAngleSpeed = (int16_t)extractIntel(frame.data, 32, 14);
         return;
     }
 
-    // 0x311 UI_warning
-    if (frame.id == 785 || frame.id == 0x311)
-    {
-        if (frame.dlc < 7) return;
-        espnowCurData.buckleStatus = (uint8_t)extractMotorola(frame.data, 13, 1);
-        espnowCurData.leftBlinkerBlinking = (uint8_t)extractMotorola(frame.data, 25, 2);
-        espnowCurData.rightBlinkerBlinking = (uint8_t)extractIntel(frame.data, 26, 2);
-        espnowCurData.anyDoorOpen = (uint8_t)extractMotorola(frame.data, 28, 1);
-        espnowCurData.uiHighBeam = (uint8_t)extractMotorola(frame.data, 50, 1);
-        return;
-    }
-
-    // 0x39B DAS_status
-    if (frame.id == 923 || frame.id == 0x39B)
+    // 0x257 DI_speed: vehicleSpeed, uiSpeed
+    // DBC: vehicleSpeed=12|12@1+ (0.08,-40), uiSpeed=24|8@1+
+    if (frame.id == 599 || frame.id == 0x257)
     {
         if (frame.dlc < 5) return;
-        espnowCurData.blindSpotRearLeft = (uint8_t)extractIntel(frame.data, 4, 2);
-        espnowCurData.blindSpotRearRight = (uint8_t)extractIntel(frame.data, 6, 2);
-        espnowCurData.suppressSpeedWarning = (uint8_t)extractIntel(frame.data, 13, 1);
-        espnowCurData.forwardCollisionWarning = (uint8_t)extractIntel(frame.data, 22, 2);
-        espnowCurData.sideCollisionWarning = (uint8_t)extractIntel(frame.data, 32, 2);
-        espnowCurData.laneDepartureWarning = (uint8_t)extractIntel(frame.data, 37, 3);
+        espnowCurData.vehicleSpeed = (uint16_t)extractIntel(frame.data, 12, 12);
+        espnowCurData.uiSpeed      = frame.data[3];
         return;
     }
 
-    // 0x39D IBST_status
+    // 0x389 DAS_status2: longCollisionWarning, lssState, driverInteractionLevel, accSpeedLimit
+    // DBC: longCollisionWarning=48|4@1+, lssState=31|3@1+, driverInteractionLevel=38|2@1+, accSpeedLimit=0|10@1+
+    if (frame.id == 905 || frame.id == 0x389)
+    {
+        if (frame.dlc < 7) return;
+        espnowCurData.longCollisionWarning   = (uint8_t)extractIntel(frame.data, 48, 4);
+        espnowCurData.lssState               = (uint8_t)extractIntel(frame.data, 31, 3);
+        espnowCurData.driverInteractionLevel = (uint8_t)extractIntel(frame.data, 38, 2);
+        uint64_t raw = extractIntel(frame.data, 0, 10);
+        uint16_t accLimit = raw * 0.4f + 0.5f;
+        espnowCurData.accSpeedLimit          = accLimit > 255 ? 255 : (uint8_t)accLimit;
+        return;
+    }
+
+    // 0x39D IBST_status: driverBrakeApply, brakeRodTravel
+    // DBC: driverBrakeApply=16|2@1+, brakeRodTravel=21|12@1+
     if (frame.id == 925 || frame.id == 0x39D)
     {
         if (frame.dlc < 3) return;
         espnowCurData.driverBrakeApply = (uint8_t)extractIntel(frame.data, 16, 2);
-        espnowCurData.brakeRodTravel = (int16_t)extractIntel(frame.data, 21, 12);
+        espnowCurData.brakeRodTravel   = (int16_t)extractIntel(frame.data, 21, 12);
         return;
     }
 
     // 0x3F5 VCFRONT_lighting
+    // DBC: indicatorLeftRequest=0|2@1+, indicatorRightRequest=2|2@1+, hazardLightRequest=4|4@1+
+    //      lowBeamLeftStatus=28|2@1+, lowBeamRightStatus=30|2@1+, highBeamLeftStatus=32|2@1+
+    //      highBeamRightStatus=34|2@1+, drlLeftStatus=36|2@1+, drlRightStatus=38|2@1+
+    //      turnSignalLeftStatus=50|2@1+, turnSignalRightStatus=52|2@1+
+    //      parkLeftStatus=54|2@1+, parkRightStatus=56|2@1+
+    //      fogLeftStatus=40|2@1+, fogRightStatus=42|2@1+
+    //      sideRepeaterLeftStatus=46|2@1+, sideRepeaterRightStatus=48|2@1+
     if (frame.id == 1013 || frame.id == 0x3F5)
     {
         if (frame.dlc < 8) return;
-        espnowCurData.indicatorLeftRequest = frame.data[0] & 0x03;
-        espnowCurData.indicatorRightRequest = (frame.data[0] >> 2) & 0x03;
-        espnowCurData.hazardLightRequest = (frame.data[0] >> 4) & 0x0F;
-        espnowCurData.ambientLightingBrightness = frame.data[1];
-        espnowCurData.switchLightingBrightness = frame.data[2];
-        espnowCurData.approachLightingRequest = (frame.data[3] >> 1) & 0x01;
-        espnowCurData.seeYouHomeLightingReq = (frame.data[3] >> 2) & 0x01;
-        espnowCurData.hazardSwitchBacklight = (frame.data[3] >> 3) & 0x01;
-        espnowCurData.lowBeamLeftStatus = (frame.data[3] >> 4) & 0x03;
-        espnowCurData.lowBeamRightStatus = (frame.data[3] >> 6) & 0x03;
-        espnowCurData.highBeamLeftStatus = frame.data[4] & 0x03;
-        espnowCurData.highBeamRightStatus = (frame.data[4] >> 2) & 0x03;
-        espnowCurData.drlLeftStatus = (frame.data[4] >> 4) & 0x03;
-        espnowCurData.drlRightStatus = (frame.data[4] >> 6) & 0x03;
-        espnowCurData.fogLeftStatus = frame.data[5] & 0x03;
-        espnowCurData.fogRightStatus = (frame.data[5] >> 2) & 0x03;
+        espnowCurData.lowBeamLeftStatus      = (frame.data[3] >> 4) & 0x03;
+        espnowCurData.lowBeamRightStatus     = (frame.data[3] >> 6) & 0x03;
+        espnowCurData.highBeamLeftStatus     = frame.data[4] & 0x03;
+        espnowCurData.highBeamRightStatus    = (frame.data[4] >> 2) & 0x03;
+        espnowCurData.drlLeftStatus          = (frame.data[4] >> 4) & 0x03;
+        espnowCurData.drlRightStatus         = (frame.data[4] >> 6) & 0x03;
+        espnowCurData.fogLeftStatus          = frame.data[5] & 0x03;
+        espnowCurData.fogRightStatus         = (frame.data[5] >> 2) & 0x03;
         espnowCurData.sideRepeaterLeftStatus = (frame.data[5] >> 6) & 0x03;
-        espnowCurData.sideRepeaterRightStatus = frame.data[6] & 0x03;
-        espnowCurData.turnSignalLeftStatus = (frame.data[6] >> 2) & 0x03;
-        espnowCurData.turnSignalRightStatus = (frame.data[6] >> 4) & 0x03;
-        espnowCurData.parkLeftStatus = (frame.data[6] >> 6) & 0x03;
-        espnowCurData.parkRightStatus = frame.data[7] & 0x03;
-        espnowCurData.highBeamSwitchActive = (frame.data[7] >> 2) & 0x01;
+        espnowCurData.sideRepeaterRightStatus= frame.data[6] & 0x03;
+        espnowCurData.turnSignalLeftStatus   = (frame.data[6] >> 2) & 0x03;
+        espnowCurData.turnSignalRightStatus  = (frame.data[6] >> 4) & 0x03;
+        espnowCurData.parkLeftStatus         = (frame.data[6] >> 6) & 0x03;
+        espnowCurData.parkRightStatus        = frame.data[7] & 0x03;
+        espnowCurData.hazardLightRequest     = (frame.data[0] >> 4) & 0x0F;
+        espnowCurData.indicatorLeftRequest   = frame.data[0] & 0x03;
+        espnowCurData.indicatorRightRequest  = (frame.data[0] >> 2) & 0x03;
         return;
     }
 }
@@ -397,11 +363,10 @@ static void espnowSendTestPackets()
     static const uint8_t testAccels[] = {15, 30, 50, 70, 0};
     for (int i = 0; i < 5; i++)
     {
-        espnowCurData.vehicleSpeed = testSpeeds[i];
-        espnowCurData.accelPedalPos = testAccels[i];
-        espnowCurData.gear = (i == 0) ? 1 : 4;
-        espnowCurData.leftBlinkerBlinking = (i % 3 == 1) ? 1 : 0;
-        espnowCurData.rightBlinkerBlinking = (i % 3 == 2) ? 1 : 0;
+    espnowCurData.gear = (i == 0) ? 1 : 4;
+    espnowCurData.accelPedalPos = testAccels[i];
+    espnowCurData.vehicleSpeed = testSpeeds[i];
+    espnowCurData.driverBrakeApply = (i == 3) ? 2 : 0;
 
         EspNowCanDataPkt pkt = espnowCurData;
         pkt.seq = espnowSeq++;
@@ -418,23 +383,19 @@ static void espnowSendTestPackets()
 struct EspNowScenarioStep
 {
     unsigned long durationMs;
-    uint16_t speed;
-    uint8_t accel;
     uint8_t gear;
-    uint8_t brake;
-    uint8_t turnLeft;
-    uint8_t turnRight;
-    uint8_t doorOpen;
+    uint8_t accel;
+    uint16_t speed;
+    uint8_t brakeApply;
 };
 
 static const EspNowScenarioStep espnowDefaultScenario[] = {
-    {2000, 0, 0, 1, 0, 0, 0, 0},      // Step 0: Parked
-    {1500, 0, 0, 1, 0, 0, 0, 0},      // Step 1: Still parked
-    {3000, 400, 40, 4, 0, 0, 0, 0},   // Step 2: Drive, accelerate
-    {2000, 500, 25, 4, 0, 0, 0, 0},   // Step 3: Cruise
-    {2500, 350, 20, 4, 0, 1, 0, 0},   // Step 4: Left blinker
-    {2000, 150, 10, 4, 0, 0, 1, 0},   // Step 5: Right blinker
-    {1000, 0, 0, 1, 0, 0, 0, 0},      // Step 6: Stop
+    {2000, 1, 0,   0,   0},   // Parked
+    {3000, 4, 40,  400, 0},   // Drive, accelerate
+    {2000, 4, 25,  500, 0},   // Cruise
+    {2500, 4, 0,   300, 2},   // Braking
+    {2000, 4, 20,  350, 0},   // Release brake, cruise
+    {1000, 1, 0,   0,   0},   // Stop, park
 };
 static constexpr int espnowScenarioStepCount = sizeof(espnowDefaultScenario) / sizeof(espnowDefaultScenario[0]);
 
@@ -483,12 +444,10 @@ static void espnowTickScenario()
         speed = espnowScenarioPrevSpeed + (static_cast<int>(curStep.speed) - static_cast<int>(espnowScenarioPrevSpeed)) * t / curStep.durationMs;
     }
 
-    espnowCurData.vehicleSpeed = speed;
-    espnowCurData.accelPedalPos = curStep.accel;
     espnowCurData.gear = curStep.gear;
-    espnowCurData.leftBlinkerBlinking = curStep.turnLeft;
-    espnowCurData.rightBlinkerBlinking = curStep.turnRight;
-    espnowCurData.anyDoorOpen = curStep.doorOpen;
+    espnowCurData.accelPedalPos = curStep.accel;
+    espnowCurData.vehicleSpeed = speed;
+    espnowCurData.driverBrakeApply = curStep.brakeApply;
 }
 
 static bool espnowPairDevice(const uint8_t *mac)

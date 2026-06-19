@@ -42,11 +42,15 @@ struct CarManagerBase
 
 struct MyCanHandler : public CarManagerBase
 {
+    static constexpr uint32_t kFilterIds[] = {
+        0x118, 0x129, 0x257, 0x389, 0x39D, 0x3F5
+    };
+
     const uint32_t *filterIds() const override
     {
-        return nullptr;
+        return kFilterIds;
     }
-    uint8_t filterIdCount() const override { return 0; }
+    uint8_t filterIdCount() const override { return 6; }
 
     void handleMessage(const CanFrame &frame) override
     {

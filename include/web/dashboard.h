@@ -168,17 +168,13 @@ static const char *decodeCanId(uint32_t id)
     switch (id)
     {
     case 0x118:
-        return "DI_systemStatus (档位/油门/动能回收)";
-    case 0x145:
-        return "ESP_status (制动开关/踏板行程)";
-    case 0x155:
-        return "ESP_B (车速/静止状态)";
+        return "DI_systemStatus (档位/油门/动能回收/制动)";
     case 0x129:
         return "SCCM_steeringAngleSensor (方向盘转角)";
-    case 0x311:
-        return "UI_warning (安全带/转向灯/车门/远光)";
-    case 0x39B:
-        return "DAS_status (盲区/碰撞预警/车道偏离)";
+    case 0x257:
+        return "DI_speed (车速/显示速度)";
+    case 0x389:
+        return "DAS_status2 (碰撞预警/车道辅助/ACC限速)";
     case 0x39D:
         return "IBST_status (制动踏板行程)";
     case 0x3F5:
@@ -188,9 +184,9 @@ static const char *decodeCanId(uint32_t id)
     }
 }
 
-// Sniff: accept all CAN IDs (empty filter = accept all)
-static constexpr uint32_t kDashboardSniffIds[] = {};
-static constexpr uint8_t kDashboardSniffIdCount = 0;
+// Sniff: only accept the 5 relay CAN IDs
+static constexpr uint32_t kDashboardSniffIds[] = {0x118, 0x129, 0x257, 0x389, 0x39D, 0x3F5};
+static constexpr uint8_t kDashboardSniffIdCount = 6;
 
 // CAN ID collector — tracks every observed CAN ID and its receive count
 #define CAN_ID_COLLECTOR_MAX 500
@@ -1749,24 +1745,17 @@ static void handleEspNowStatus()
     j += ",\"scenarioStep\":" + String(espnowScenarioStep);
 
     // Signal values
-    j += ",\"speed\":" + String(d.vehicleSpeed);
-    j += ",\"standstill\":" + String(d.standstill);
     j += ",\"gear\":" + String(d.gear);
     j += ",\"accel\":" + String(d.accelPedalPos);
     j += ",\"regen\":" + String(d.regenLight);
     j += ",\"steeringAngle\":" + String(d.steeringAngle);
     j += ",\"steeringSpeed\":" + String(d.steeringAngleSpeed);
-    j += ",\"buckle\":" + String(d.buckleStatus);
-    j += ",\"leftBlink\":" + String(d.leftBlinkerBlinking);
-    j += ",\"rightBlink\":" + String(d.rightBlinkerBlinking);
-    j += ",\"doorOpen\":" + String(d.anyDoorOpen);
-    j += ",\"highBeam\":" + String(d.uiHighBeam);
-    j += ",\"ldw\":" + String(d.laneDepartureWarning);
-    j += ",\"scw\":" + String(d.sideCollisionWarning);
-    j += ",\"fcw\":" + String(d.forwardCollisionWarning);
-    j += ",\"ssw\":" + String(d.suppressSpeedWarning);
-    j += ",\"bsr\":" + String(d.blindSpotRearRight);
-    j += ",\"bsl\":" + String(d.blindSpotRearLeft);
+    j += ",\"speed\":" + String(d.vehicleSpeed);
+    j += ",\"uiSpeed\":" + String(d.uiSpeed);
+    j += ",\"collisionWarning\":" + String(d.longCollisionWarning);
+    j += ",\"lssState\":" + String(d.lssState);
+    j += ",\"driverInteraction\":" + String(d.driverInteractionLevel);
+    j += ",\"accSpeedLimit\":" + String(d.accSpeedLimit);
     j += ",\"brakeRod\":" + String(d.brakeRodTravel);
     j += ",\"brakeApply\":" + String(d.driverBrakeApply);
     j += ",\"turnL\":" + String(d.turnSignalLeftStatus);
