@@ -25,8 +25,8 @@ struct __attribute__((packed)) EspNowDiscoveryPkt
 };
 
 // ═══════════════════════════════════════════════════════════════
-// ESP-NOW CAN Data Packet — signals from 6 selected CAN IDs
-// Total size: 48 bytes (well within ESP-NOW 250-byte limit)
+// ESP-NOW CAN Data Packet — signals from 8 selected CAN IDs
+// Total size: 49 bytes (well within ESP-NOW 250-byte limit)
 // ═══════════════════════════════════════════════════════════════
 struct __attribute__((packed)) EspNowCanDataPkt
 {
@@ -85,10 +85,13 @@ struct __attribute__((packed)) EspNowCanDataPkt
     // 0x3E2 brake light
     uint8_t brakeLight;
 
+    // 0x102/0x103 door status — bit0=左前, bit1=左后, bit2=右前, bit3=右后
+    uint8_t doorOpenBits;
+
     uint8_t chksum;
 };
 
-static_assert(sizeof(EspNowCanDataPkt) == 48, "EspNowCanDataPkt size mismatch");
+static_assert(sizeof(EspNowCanDataPkt) == 49, "EspNowCanDataPkt size mismatch");
 
 struct EspNowDiscoveredDev
 {

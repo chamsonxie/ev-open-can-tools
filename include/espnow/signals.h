@@ -94,4 +94,24 @@ static void espnowUpdateFromFrame(const CanFrame &frame)
         espnowCurData.brakeLight = s.brakeLight;
         return;
     }
+
+    if (frame.id == 258 || frame.id == 0x102)
+    {
+        auto s = parseVCLEFT_doorStatus(frame.data, frame.dlc);
+        if (frame.dlc < 8) return;
+        espnowCurData.doorOpenBits &= ~0x03;
+        if (s.frontLatchStatus == 1) espnowCurData.doorOpenBits |= 0x01;
+        if (s.rearLatchStatus == 1)  espnowCurData.doorOpenBits |= 0x02;
+        return;
+    }
+
+    if (frame.id == 259 || frame.id == 0x103)
+    {
+        auto s = parseVCRIGHT_doorStatus(frame.data, frame.dlc);
+        if (frame.dlc < 8) return;
+        espnowCurData.doorOpenBits &= ~0x0C;
+        if (s.frontLatchStatus == 1) espnowCurData.doorOpenBits |= 0x04;
+        if (s.rearLatchStatus == 1)  espnowCurData.doorOpenBits |= 0x08;
+        return;
+    }
 }

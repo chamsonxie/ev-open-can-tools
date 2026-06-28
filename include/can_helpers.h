@@ -138,6 +138,54 @@ struct E32_brakeLight_s
     uint8_t brakeLight;  // 0=off, 1=on (data[0] low nibble 0xC→0xD)
 };
 
+struct VCLEFT_doorStatus_s
+{
+    uint8_t frontLatchStatus;
+    uint8_t rearLatchStatus;
+    uint8_t frontLatchSwitch;
+    uint8_t rearLatchSwitch;
+    uint8_t frontHandlePulled;
+    uint8_t rearHandlePulled;
+    uint8_t frontRelActuatorSwitch;
+    uint8_t rearRelActuatorSwitch;
+    uint8_t frontHandlePWM;
+    uint8_t rearHandlePWM;
+    uint8_t frontIntSwitchPressed;
+    uint8_t rearIntSwitchPressed;
+    uint8_t mirrorTiltXPosition;
+    uint8_t mirrorTiltYPosition;
+    uint8_t mirrorState;
+    uint8_t mirrorFoldState;
+    uint8_t mirrorRecallState;
+    uint8_t mirrorHeatState;
+    uint8_t mirrorDipped;
+    uint8_t frontHandlePulledPersist;
+};
+
+struct VCRIGHT_doorStatus_s
+{
+    uint8_t frontLatchStatus;
+    uint8_t rearLatchStatus;
+    uint8_t frontLatchSwitch;
+    uint8_t rearLatchSwitch;
+    uint8_t frontHandlePulled;
+    uint8_t rearHandlePulled;
+    uint8_t frontRelActuatorSwitch;
+    uint8_t rearRelActuatorSwitch;
+    uint8_t frontHandlePWM;
+    uint8_t rearHandlePWM;
+    uint8_t frontHandlePulledPersist;
+    uint8_t frontIntSwitchPressed;
+    uint8_t rearIntSwitchPressed;
+    uint8_t mirrorTiltXPosition;
+    uint8_t mirrorTiltYPosition;
+    uint8_t mirrorState;
+    uint8_t mirrorFoldState;
+    uint8_t mirrorRecallState;
+    uint8_t trunkLatchStatus;
+    uint8_t mirrorDipped;
+};
+
 // ── Unified signal parsing functions ──
 
 inline DI_systemStatus_s parseDI_systemStatus(const uint8_t *data, uint8_t dlc)
@@ -230,5 +278,59 @@ inline E32_brakeLight_s parseE32_brakeLight(const uint8_t *data, uint8_t dlc)
     E32_brakeLight_s s = {};
     if (dlc < 1) return s;
     s.brakeLight = data[0] & 0x01;
+    return s;
+}
+
+inline VCLEFT_doorStatus_s parseVCLEFT_doorStatus(const uint8_t *data, uint8_t dlc)
+{
+    VCLEFT_doorStatus_s s = {};
+    if (dlc < 8) return s;
+    s.frontLatchStatus       = (uint8_t)extractIntel(data, 0, 4);
+    s.rearLatchStatus        = (uint8_t)extractIntel(data, 4, 4);
+    s.frontLatchSwitch       = (uint8_t)extractIntel(data, 8, 1);
+    s.rearLatchSwitch        = (uint8_t)extractIntel(data, 9, 1);
+    s.frontHandlePulled      = (uint8_t)extractIntel(data, 10, 1);
+    s.rearHandlePulled       = (uint8_t)extractIntel(data, 11, 1);
+    s.frontRelActuatorSwitch = (uint8_t)extractIntel(data, 12, 1);
+    s.rearRelActuatorSwitch  = (uint8_t)extractIntel(data, 13, 1);
+    s.frontHandlePWM         = (uint8_t)extractIntel(data, 16, 7);
+    s.rearHandlePWM          = (uint8_t)extractIntel(data, 24, 7);
+    s.frontIntSwitchPressed  = (uint8_t)extractIntel(data, 31, 1);
+    s.rearIntSwitchPressed   = (uint8_t)extractIntel(data, 32, 1);
+    s.mirrorTiltXPosition    = (uint8_t)extractIntel(data, 33, 8);
+    s.mirrorTiltYPosition    = (uint8_t)extractIntel(data, 41, 8);
+    s.mirrorState            = (uint8_t)extractIntel(data, 49, 3);
+    s.mirrorFoldState        = (uint8_t)extractIntel(data, 52, 3);
+    s.mirrorRecallState      = (uint8_t)extractIntel(data, 55, 3);
+    s.mirrorHeatState        = (uint8_t)extractIntel(data, 58, 3);
+    s.mirrorDipped           = (uint8_t)extractIntel(data, 61, 1);
+    s.frontHandlePulledPersist = (uint8_t)extractIntel(data, 62, 1);
+    return s;
+}
+
+inline VCRIGHT_doorStatus_s parseVCRIGHT_doorStatus(const uint8_t *data, uint8_t dlc)
+{
+    VCRIGHT_doorStatus_s s = {};
+    if (dlc < 8) return s;
+    s.frontLatchStatus       = (uint8_t)extractIntel(data, 0, 4);
+    s.rearLatchStatus        = (uint8_t)extractIntel(data, 4, 4);
+    s.frontLatchSwitch       = (uint8_t)extractIntel(data, 8, 1);
+    s.rearLatchSwitch        = (uint8_t)extractIntel(data, 9, 1);
+    s.frontHandlePulled      = (uint8_t)extractIntel(data, 10, 1);
+    s.rearHandlePulled       = (uint8_t)extractIntel(data, 11, 1);
+    s.frontRelActuatorSwitch = (uint8_t)extractIntel(data, 12, 1);
+    s.rearRelActuatorSwitch  = (uint8_t)extractIntel(data, 13, 1);
+    s.frontHandlePWM         = (uint8_t)extractIntel(data, 14, 7);
+    s.rearHandlePWM          = (uint8_t)extractIntel(data, 21, 7);
+    s.frontHandlePulledPersist = (uint8_t)extractIntel(data, 30, 1);
+    s.frontIntSwitchPressed  = (uint8_t)extractIntel(data, 31, 1);
+    s.rearIntSwitchPressed   = (uint8_t)extractIntel(data, 32, 1);
+    s.mirrorTiltXPosition    = (uint8_t)extractIntel(data, 33, 8);
+    s.mirrorTiltYPosition    = (uint8_t)extractIntel(data, 41, 8);
+    s.mirrorState            = (uint8_t)extractIntel(data, 49, 3);
+    s.mirrorFoldState        = (uint8_t)extractIntel(data, 52, 3);
+    s.mirrorRecallState      = (uint8_t)extractIntel(data, 60, 3);
+    s.trunkLatchStatus       = (uint8_t)extractIntel(data, 56, 4);
+    s.mirrorDipped           = (uint8_t)extractIntel(data, 63, 1);
     return s;
 }

@@ -150,6 +150,57 @@ inline const char *iBoosterStatusName(uint8_t v)
     }
 }
 
+inline const char *latchStatusName(uint8_t v)
+{
+    switch (v)
+    {
+    case 0: return "SNA"; case 1: return "开"; case 2: return "关";
+    case 3: return "关紧中"; case 4: return "开锁中"; case 5: return "微开";
+    case 6: return "超时"; case 7: return "默认"; case 8: return "故障";
+    default: return "?";
+    }
+}
+
+inline const char *mirrorStateName(uint8_t v)
+{
+    switch (v)
+    {
+    case 0: return "空闲"; case 1: return "X倾斜"; case 2: return "Y倾斜";
+    case 3: return "折叠/展开"; case 4: return "记忆调出";
+    default: return "?";
+    }
+}
+
+inline const char *mirrorFoldName(uint8_t v)
+{
+    switch (v)
+    {
+    case 0: return "未知"; case 1: return "折叠"; case 2: return "展开";
+    case 3: return "折叠中"; case 4: return "展开中";
+    default: return "?";
+    }
+}
+
+inline const char *mirrorRecallName(uint8_t v)
+{
+    switch (v)
+    {
+    case 0: return "空闲"; case 1: return "调用1"; case 2: return "调用2";
+    case 3: return "调用3"; case 4: return "保存中"; case 5: return "调用中";
+    default: return "?";
+    }
+}
+
+inline const char *mirrorHeatName(uint8_t v)
+{
+    switch (v)
+    {
+    case 0: return "SNA"; case 1: return "开"; case 2: return "关";
+    case 3: return "关不可用"; case 4: return "故障";
+    default: return "?";
+    }
+}
+
 // ── formatCanTranslation: all DBC signals for 6 CAN IDs ──
 // Uses the unified signal parsers from can_helpers.h to eliminate bit-extraction duplication.
 
@@ -256,6 +307,49 @@ inline bool formatCanTranslation(uint32_t id, const uint8_t *data, uint8_t dlc, 
         if (dlc < 1) return false;
         char tmp[64];
         snprintf(tmp, sizeof(tmp), "刹车灯:%s", s.brakeLight ? "亮" : "灭");
+        strlcpy(out, tmp, outLen);
+        return true;
+    }
+
+    if (id == 258 || id == 0x102)
+    {
+        auto s = parseVCLEFT_doorStatus(data, dlc);
+        if (dlc < 8) return false;
+        char tmp[256];
+        snprintf(tmp, sizeof(tmp),
+                 "左前门:%s 左后门:%s 前把手拉:%s 后把手拉:%s "
+                 "前内开:%s 后内开:%s 前把PWM:%d%% 后把PWM:%d%% "
+                 "镜折叠:%s 镜状态:%s 镜加热:%s 镜防眩:%s "
+                 "镜倾X:%.2fV Y:%.2fV",
+                 latchStatusName(s.frontLatchStatus), latchStatusName(s.rearLatchStatus),
+                 s.frontHandlePulled ? "是" : "否", s.rearHandlePulled ? "是" : "否",
+                 s.frontIntSwitchPressed ? "按" : "松", s.rearIntSwitchPressed ? "按" : "松",
+                 s.frontHandlePWM, s.rearHandlePWM,
+                 mirrorFoldName(s.mirrorFoldState), mirrorStateName(s.mirrorState),
+                 mirrorHeatName(s.mirrorHeatState), s.mirrorDipped ? "开" : "关",
+                 s.mirrorTiltXPosition * 0.02f, s.mirrorTiltYPosition * 0.02f);
+        strlcpy(out, tmp, outLen);
+        return true;
+    }
+
+    if (id == 259 || id == 0x103)
+    {
+        auto s = parseVCRIGHT_doorStatus(data, dlc);
+        if (dlc < 8) return false;
+        char tmp[256];
+        snprintf(tmp, sizeof(tmp),
+                 "右前门:%s 右后门:%s 尾门:%s 前把手拉:%s 后把手拉:%s "
+                 "前内开:%s 后内开:%s 前把PWM:%d%% 后把PWM:%d%% "
+                 "镜折叠:%s 镜状态:%s 镜防眩:%s "
+                 "镜倾X:%.2fV Y:%.2fV",
+                 latchStatusName(s.frontLatchStatus), latchStatusName(s.rearLatchStatus),
+                 latchStatusName(s.trunkLatchStatus),
+                 s.frontHandlePulled ? "是" : "否", s.rearHandlePulled ? "是" : "否",
+                 s.frontIntSwitchPressed ? "按" : "松", s.rearIntSwitchPressed ? "按" : "松",
+                 s.frontHandlePWM, s.rearHandlePWM,
+                 mirrorFoldName(s.mirrorFoldState), mirrorStateName(s.mirrorState),
+                 s.mirrorDipped ? "开" : "关",
+                 s.mirrorTiltXPosition * 0.02f, s.mirrorTiltYPosition * 0.02f);
         strlcpy(out, tmp, outLen);
         return true;
     }
