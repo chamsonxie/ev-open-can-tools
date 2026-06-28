@@ -52,7 +52,7 @@ static void espnowUpdateFromFrame(const CanFrame &frame)
         return;
     }
 
-    if (frame.id == 279 || frame.id == 0x117)
+    if (frame.id == 263 || frame.id == 0x107)
     {
         auto s = parseIBST_status(frame.data, frame.dlc);
         if (frame.dlc < 3) return;

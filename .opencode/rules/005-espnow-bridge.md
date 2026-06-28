@@ -19,7 +19,7 @@
 | `0x129` (297) | SCCM_steeringAngleSensor | steeringAngle, steeringAngleSpeed |
 | `0x311` (785) | UI_warning | buckleStatus, leftBlinkerBlinking, rightBlinkerBlinking, anyDoorOpen, uiHighBeam |
 | `0x39B` (923) | DAS_status | blindSpotRearLeft/Right, suppressSpeedWarning, forwardCollisionWarning, sideCollisionWarning, laneDepartureWarning |
-| `0x117` (279) | IBST_status | driverBrakeApply, brakeRodTravel |
+| `0x107` (263) | IBST_status | driverBrakeApply, brakeRodTravel |
 | `0x3F5` (1013) | VCFRONT_lighting | 22 个灯光状态字段 |
 
 ## 广播配置

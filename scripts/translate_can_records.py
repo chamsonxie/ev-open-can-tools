@@ -7,7 +7,7 @@
   0x129 SCCM_steering:    方向盘转角/角速度
   0x311 UI_warning:       安全带/转向灯/车门/远光
   0x39B DAS_status:       盲区/碰撞预警/车道偏离/超速警告
-   0x117 IBST_status:      制动踏板行程/制动状态
+   0x107 IBST_status:      制动踏板行程/制动状态
   0x3F5 VCFRONT_lighting: 全部23个灯光信号
 
 用法:
@@ -151,7 +151,7 @@ def decode_39b(row):
 
 
 def decode_39d(row):
-    """0x117 IBST_status"""
+    """0x107 IBST_status"""
     b = bytes_from_row(row)
     if len(b) < 3:
         return {}
@@ -283,7 +283,7 @@ DECODERS = {
     0x129: decode_129,
     0x311: decode_311,
     0x39B: decode_39b,
-    0x117: decode_39d,
+    0x107: decode_39d,
     0x3F5: decode_3f5,
 }
 

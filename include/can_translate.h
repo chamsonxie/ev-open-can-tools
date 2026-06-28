@@ -216,7 +216,7 @@ inline bool formatCanTranslation(uint32_t id, const uint8_t *data, uint8_t dlc, 
         return true;
     }
 
-    if (id == 279 || id == 0x117)
+    if (id == 263 || id == 0x107)
     {
         auto s = parseIBST_status(data, dlc);
         if (dlc < 3) return false;

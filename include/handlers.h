@@ -56,7 +56,7 @@ struct MyCanHandler : public CarManagerBase<MyCanHandler>
     Shared<bool> filterEnabled{true};
 
     static constexpr uint32_t kFilterIds[] = {
-        0x118, 0x257, 0x389, 0x117, 0x3F5, 0x3E2, 0x102};
+        0x118, 0x257, 0x389, 0x107, 0x3F5, 0x3E2, 0x102};
 
     const uint32_t *filterIds() const
     {

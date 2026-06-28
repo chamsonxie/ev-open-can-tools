@@ -173,7 +173,7 @@ static const char *decodeCanId(uint32_t id)
         return "DI_speed (车速/显示速度)";
     case 0x389:
         return "DAS_status2 (碰撞预警/车道辅助/ACC限速)";
-    case 0x117:
+    case 0x107:
         return "IBST_status (制动踏板行程)";
     case 0x3F5:
         return "VCFRONT_lighting (前部灯光)";
@@ -183,7 +183,7 @@ static const char *decodeCanId(uint32_t id)
 }
 
 // Sniff: CAN IDs relayed via ESP-NOW
-static constexpr uint32_t kDashboardSniffIds[] = {0x118, 0x257, 0x389, 0x117, 0x3F5, 0x3E2};
+static constexpr uint32_t kDashboardSniffIds[] = {0x118, 0x257, 0x389, 0x107, 0x3F5, 0x3E2};
 static constexpr uint8_t kDashboardSniffIdCount = sizeof(kDashboardSniffIds) / sizeof(kDashboardSniffIds[0]);
 
 // CAN ID collector — tracks every observed CAN ID and its receive count
@@ -1797,7 +1797,7 @@ static void handleEspNowStatus()
     j += ",\"lssState\":" + String(d.lssState);
     j += ",\"driverInteraction\":" + String(d.driverInteractionLevel);
     j += ",\"accSpeedLimit\":" + String(d.accSpeedLimit);
-    // 0x117 IBST_status
+    // 0x107 IBST_status
     j += ",\"brakeRod\":" + String(d.brakeRodTravel);
     j += ",\"brakeApply\":" + String(d.driverBrakeApply);
     j += ",\"internalState\":" + String(d.internalState);
@@ -1851,9 +1851,9 @@ static void handleCanSignals()
     j += ",\"accSpeedLimit\":" + String(d.accSpeedLimit);
     j += "}";
 
-    // 0x117 IBST_status
+    // 0x107 IBST_status
     static const char *brakeNames[] = {"uninit","no","yes","fault"};
-    j += ",\"0x117\":{";
+    j += ",\"0x107\":{";
     j += "\"driverBrakeApply\":" + String(d.driverBrakeApply) + ",\"brakeLabel\":\"" + String(brakeNames[d.driverBrakeApply < 4 ? d.driverBrakeApply : 0]) + "\"";
     j += ",\"brakeRodTravel\":" + String(d.brakeRodTravel);
     j += ",\"internalState\":" + String(d.internalState);

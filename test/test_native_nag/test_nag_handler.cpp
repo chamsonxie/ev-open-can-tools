@@ -20,7 +20,7 @@ void test_nag_filter_ids_count()
     TEST_ASSERT_EQUAL_UINT32(0x118, handler.filterIds()[0]);
     TEST_ASSERT_EQUAL_UINT32(0x257, handler.filterIds()[1]);
     TEST_ASSERT_EQUAL_UINT32(0x389, handler.filterIds()[2]);
-    TEST_ASSERT_EQUAL_UINT32(0x117, handler.filterIds()[3]);
+    TEST_ASSERT_EQUAL_UINT32(0x107, handler.filterIds()[3]);
     TEST_ASSERT_EQUAL_UINT32(0x3F5, handler.filterIds()[4]);
 }
 

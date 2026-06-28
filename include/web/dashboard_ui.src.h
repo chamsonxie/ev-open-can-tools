@@ -349,7 +349,7 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 
   <div class="subsec" data-subkey="config-can-filter">
     <div class="subsec-head">
-      <div class="subsec-title">CAN 过滤 <span class="title-help" onclick="return toggleHelp(this,event)" title="开启后只接收选定的 CAN ID（0x118、0x257、0x389、0x117、0x3F5、0x3E2），关闭则接收总线所有帧。">?</span></div>
+      <div class="subsec-title">CAN 过滤 <span class="title-help" onclick="return toggleHelp(this,event)" title="开启后只接收选定的 CAN ID（0x118、0x257、0x389、0x107、0x3F5、0x3E2），关闭则接收总线所有帧。">?</span></div>
       <div class="subsec-meta">CAN ID 接收控制</div>
     </div>
     <div class="subsec-body">

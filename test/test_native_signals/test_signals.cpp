@@ -92,7 +92,7 @@ void test_parseDI_speed_short_dlc_returns_defaults()
     TEST_ASSERT_EQUAL_UINT16(0, s.vehicleSpeed);
 }
 
-// ── IBST_status (0x117 / 279) ──
+// ── IBST_status (0x107 / 263) ──
 
 void test_parseIBST_status_brake_apply()
 {

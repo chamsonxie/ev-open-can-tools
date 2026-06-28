@@ -51,7 +51,7 @@ struct __attribute__((packed)) EspNowCanDataPkt
     uint8_t uiSpeed;
     uint8_t uiSpeedUnits;
 
-    // 0x117 IBST_status
+    // 0x107 IBST_status
     int16_t brakeRodTravel;
     uint8_t driverBrakeApply;
     uint8_t internalState;
