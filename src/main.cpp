@@ -2,6 +2,19 @@
 
 #include "app.h"
 #include "drivers/twai_driver.h"
+#include "espnow/signals.h"
+#include "esp_sleep.h"
+
+static constexpr unsigned long SLEEP_TIMEOUT_MS = 30000;
+static constexpr uint64_t SLEEP_WAKEUP_US = 60ULL * 1000000ULL;
+
+static void enterDeepSleep()
+{
+    Serial.println("[SLEEP] Entering deep sleep, timer wake 60s");
+    Serial.flush();
+    esp_sleep_enable_timer_wakeup(SLEEP_WAKEUP_US);
+    esp_deep_sleep_start();
+}
 
 static void app_main_setup()
 {
@@ -35,6 +48,13 @@ static void app_main_loop()
 #ifdef ESP32_DASHBOARD
     mcpDashboardLoop();
 #endif
+
+    // Deep sleep when car is off: vehicleLocked=1 AND no CAN for 30s
+    if (espnowCurData.vehicleLocked && lastCanSignalMs > 0
+        && millis() - lastCanSignalMs >= SLEEP_TIMEOUT_MS)
+    {
+        enterDeepSleep();
+    }
 }
 
 extern "C" void app_main(void)

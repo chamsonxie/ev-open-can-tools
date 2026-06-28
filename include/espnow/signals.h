@@ -5,11 +5,13 @@
 
 // Current signal state for broadcast — defined in broadcast.h
 extern EspNowCanDataPkt espnowCurData;
+extern unsigned long lastCanSignalMs;
 
 // Update the ESP-NOW signal state from any CAN frame
 // Uses unified signal parsers from can_helpers.h
 static void espnowUpdateFromFrame(const CanFrame &frame)
 {
+    lastCanSignalMs = millis();
     if (frame.dlc < 4) return;
 
     if (frame.id == 280 || frame.id == 0x118)
@@ -115,11 +117,12 @@ static void espnowUpdateFromFrame(const CanFrame &frame)
         return;
     }
 
-    // 0x212 — vehicle lock status. byte[2]==0x21 → locked, else awake
+    // 0x212 VCLEFT_status — VCLEFT_powerState : 16|8@1+ (1,0) [0|255]
+    //   2 = power off (deep sleep); 0x21 = awake
     if (frame.id == 530 || frame.id == 0x212)
     {
         if (frame.dlc < 3) return;
-        espnowCurData.vehicleLocked = (frame.data[2] == 0x21) ? 1 : 0;
+        espnowCurData.vehicleLocked = (extractIntel(frame.data, 16, 8) == 2) ? 1 : 0;
         return;
     }
 }

@@ -308,6 +308,7 @@ public:
         va_end(args);
         return result;
     }
+    void flush() { fflush(stdout); }
 };
 
 extern SerialClass Serial;

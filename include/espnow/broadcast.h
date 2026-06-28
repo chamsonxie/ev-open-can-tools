@@ -9,6 +9,7 @@
 // ── Global state definitions ──
 
 EspNowCanDataPkt espnowCurData = {};
+unsigned long lastCanSignalMs = 0;
 
 EspNowDiscoveredDev espnowDiscovered[ESPNOW_MAX_DISCOVERED] = {};
 int espnowDiscoveredCount = 0;
