@@ -88,10 +88,13 @@ struct __attribute__((packed)) EspNowCanDataPkt
     // 0x102/0x103 door status — bit0=左前, bit1=左后, bit2=右前, bit3=右后
     uint8_t doorOpenBits;
 
+    // 0x212 lock status — byte[2]==0x21 → locked, else awake
+    uint8_t vehicleLocked;
+
     uint8_t chksum;
 };
 
-static_assert(sizeof(EspNowCanDataPkt) == 49, "EspNowCanDataPkt size mismatch");
+static_assert(sizeof(EspNowCanDataPkt) == 50, "EspNowCanDataPkt size mismatch");
 
 struct EspNowDiscoveredDev
 {

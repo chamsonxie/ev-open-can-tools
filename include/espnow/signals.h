@@ -114,4 +114,12 @@ static void espnowUpdateFromFrame(const CanFrame &frame)
         if (s.rearLatchStatus == 1)  espnowCurData.doorOpenBits |= 0x08;
         return;
     }
+
+    // 0x212 — vehicle lock status. byte[2]==0x21 → locked, else awake
+    if (frame.id == 530 || frame.id == 0x212)
+    {
+        if (frame.dlc < 3) return;
+        espnowCurData.vehicleLocked = (frame.data[2] == 0x21) ? 1 : 0;
+        return;
+    }
 }
