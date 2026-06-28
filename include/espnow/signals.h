@@ -52,7 +52,7 @@ static void espnowUpdateFromFrame(const CanFrame &frame)
         return;
     }
 
-    if (frame.id == 925 || frame.id == 0x39D)
+    if (frame.id == 279 || frame.id == 0x117)
     {
         auto s = parseIBST_status(frame.data, frame.dlc);
         if (frame.dlc < 3) return;
@@ -84,6 +84,14 @@ static void espnowUpdateFromFrame(const CanFrame &frame)
         espnowCurData.hazardLightRequest     = s.hazardLightRequest;
         espnowCurData.indicatorLeftRequest   = s.indicatorLeftRequest;
         espnowCurData.indicatorRightRequest  = s.indicatorRightRequest;
+        return;
+    }
+
+    if (frame.id == 994 || frame.id == 0x3E2)
+    {
+        auto s = parseE32_brakeLight(frame.data, frame.dlc);
+        if (frame.dlc < 1) return;
+        espnowCurData.brakeLight = s.brakeLight;
         return;
     }
 }

@@ -20,7 +20,7 @@ CarManagerBase<Derived> (CRTP base)
 ├── HW3Handler     — Tesla HW3 CAN IDs: 280, 390, 921, 1016, 1021, 2047
 ├── HW4Handler     — Tesla HW4 (same as HW3 but different speed profile mapping)
 ├── NagHandler     — Nag suppression only (CAN ID 880)
-└── MyCanHandler   — Common handler for ESP-NOW signals (5 IDs: 0x118, 0x257, 0x389, 0x39D, 0x3F5)
+└── MyCanHandler   — Common handler for ESP-NOW signals (5 IDs: 0x118, 0x257, 0x389, 0x117, 0x3F5)
 ```
 
 - CRTP pattern (`CarManagerBase<Derived>`) eliminates virtual dispatch; all calls through `MyCanHandler*`

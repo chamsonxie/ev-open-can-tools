@@ -23,7 +23,8 @@ void tearDown() {}
 
 void test_handler_filter_ids_count()
 {
-    TEST_ASSERT_EQUAL_UINT8(5, handler.filterIdCount());
+    constexpr auto kExpectedCount = sizeof(MyCanHandler::kFilterIds) / sizeof(MyCanHandler::kFilterIds[0]);
+    TEST_ASSERT_EQUAL_UINT8(kExpectedCount, handler.filterIdCount());
     TEST_ASSERT_NOT_NULL(handler.filterIds());
 }
 

@@ -173,7 +173,7 @@ static const char *decodeCanId(uint32_t id)
         return "DI_speed (车速/显示速度)";
     case 0x389:
         return "DAS_status2 (碰撞预警/车道辅助/ACC限速)";
-    case 0x39D:
+    case 0x117:
         return "IBST_status (制动踏板行程)";
     case 0x3F5:
         return "VCFRONT_lighting (前部灯光)";
@@ -182,9 +182,9 @@ static const char *decodeCanId(uint32_t id)
     }
 }
 
-// Sniff: only accept the 5 relay CAN IDs
-static constexpr uint32_t kDashboardSniffIds[] = {0x118, 0x257, 0x389, 0x39D, 0x3F5};
-static constexpr uint8_t kDashboardSniffIdCount = 5;
+// Sniff: CAN IDs relayed via ESP-NOW
+static constexpr uint32_t kDashboardSniffIds[] = {0x118, 0x257, 0x389, 0x117, 0x3F5, 0x3E2};
+static constexpr uint8_t kDashboardSniffIdCount = sizeof(kDashboardSniffIds) / sizeof(kDashboardSniffIds[0]);
 
 // CAN ID collector — tracks every observed CAN ID and its receive count
 #define CAN_ID_COLLECTOR_MAX 500
@@ -324,6 +324,7 @@ static void dashSavePrefs()
 {
     prefs.begin(PREFS_NS, false);
     prefs.putBool("eprn", dashHandler ? (bool)dashHandler->enablePrint : true);
+    prefs.putBool("fltr", dashHandler ? (bool)dashHandler->filterEnabled : true);
     prefs.end();
 }
 
@@ -357,6 +358,9 @@ static void dashLoadPrefs()
     bool ep = prefs.getBool("eprn", true);
     if (dashHandler)
         dashHandler->enablePrint = ep;
+    bool fltr = prefs.getBool("fltr", true);
+    if (dashHandler)
+        dashHandler->filterEnabled = fltr;
 
     String apSsidPref = prefs.isKey("ap_ssid") ? prefs.getString("ap_ssid", "") : "";
     String apPassPref = prefs.isKey("ap_pass") ? prefs.getString("ap_pass", "") : "";
@@ -521,9 +525,12 @@ static void handleStatus()
     }
 
     bool ep = dashHandler ? (bool)dashHandler->enablePrint : true;
+    bool fltr = dashHandler ? (bool)dashHandler->filterEnabled : true;
 
     String j = "{\"eprn\":";
     j += ep ? "true" : "false";
+    j += ",\"fltr\":";
+    j += fltr ? "true" : "false";
     j += ",\"can\":";
     j += canOnline ? "true" : "false";
     j += ",\"rx\":";
@@ -561,6 +568,18 @@ static void handleLoggingConfig()
         bool ep = server.arg("eprn") == "1";
         dashHandler->enablePrint = ep;
         dashLog("[CFG] Logging " + String(ep ? "ON" : "OFF"));
+    }
+    dashSavePrefs();
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleFilterConfig()
+{
+    if (server.hasArg("fltr") && dashHandler)
+    {
+        bool fltr = server.arg("fltr") == "1";
+        dashHandler->filterEnabled = fltr;
+        dashLog("[CFG] CAN filter " + String(fltr ? "ON (accept listed IDs)" : "OFF (accept all)"));
     }
     dashSavePrefs();
     server.send(200, "application/json", "{\"ok\":true}");
@@ -1778,7 +1797,7 @@ static void handleEspNowStatus()
     j += ",\"lssState\":" + String(d.lssState);
     j += ",\"driverInteraction\":" + String(d.driverInteractionLevel);
     j += ",\"accSpeedLimit\":" + String(d.accSpeedLimit);
-    // 0x39D IBST_status
+    // 0x117 IBST_status
     j += ",\"brakeRod\":" + String(d.brakeRodTravel);
     j += ",\"brakeApply\":" + String(d.driverBrakeApply);
     j += ",\"internalState\":" + String(d.internalState);
@@ -1832,9 +1851,9 @@ static void handleCanSignals()
     j += ",\"accSpeedLimit\":" + String(d.accSpeedLimit);
     j += "}";
 
-    // 0x39D IBST_status
+    // 0x117 IBST_status
     static const char *brakeNames[] = {"uninit","no","yes","fault"};
-    j += ",\"0x39D\":{";
+    j += ",\"0x117\":{";
     j += "\"driverBrakeApply\":" + String(d.driverBrakeApply) + ",\"brakeLabel\":\"" + String(brakeNames[d.driverBrakeApply < 4 ? d.driverBrakeApply : 0]) + "\"";
     j += ",\"brakeRodTravel\":" + String(d.brakeRodTravel);
     j += ",\"internalState\":" + String(d.internalState);
@@ -1971,6 +1990,7 @@ static void mcpDashboardSetup(MyCanHandler *handler, CanDriver *driver)
     server.on("/status", HTTP_GET, handleStatus);
     server.on("/config", HTTP_POST, handleConfig);
     server.on("/logging", HTTP_POST, handleLoggingConfig);
+    server.on("/filter", HTTP_POST, handleFilterConfig);
     server.on("/frames", HTTP_GET, handleFrames);
     server.on("/log", HTTP_GET, handleLog);
     server.on("/reset_stats", HTTP_POST, handleResetStats);

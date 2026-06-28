@@ -150,7 +150,7 @@ inline const char *iBoosterStatusName(uint8_t v)
     }
 }
 
-// ── formatCanTranslation: all DBC signals for 5 CAN IDs ──
+// ── formatCanTranslation: all DBC signals for 6 CAN IDs ──
 // Uses the unified signal parsers from can_helpers.h to eliminate bit-extraction duplication.
 
 inline bool formatCanTranslation(uint32_t id, const uint8_t *data, uint8_t dlc, char *out, size_t outLen)
@@ -216,7 +216,7 @@ inline bool formatCanTranslation(uint32_t id, const uint8_t *data, uint8_t dlc, 
         return true;
     }
 
-    if (id == 925 || id == 0x39D)
+    if (id == 279 || id == 0x117)
     {
         auto s = parseIBST_status(data, dlc);
         if (dlc < 3) return false;
@@ -246,6 +246,16 @@ inline bool formatCanTranslation(uint32_t id, const uint8_t *data, uint8_t dlc, 
                  lightStatusName(s.turnSignalLeftStatus), lightStatusName(s.turnSignalRightStatus),
                  lightStatusName(s.parkLeftStatus), lightStatusName(s.parkRightStatus),
                  s.hazardLightRequest == 0 ? "关" : (s.hazardLightRequest == 1 ? "按钮" : "激活"));
+        strlcpy(out, tmp, outLen);
+        return true;
+    }
+
+    if (id == 994 || id == 0x3E2)
+    {
+        auto s = parseE32_brakeLight(data, dlc);
+        if (dlc < 1) return false;
+        char tmp[64];
+        snprintf(tmp, sizeof(tmp), "刹车灯:%s", s.brakeLight ? "亮" : "灭");
         strlcpy(out, tmp, outLen);
         return true;
     }

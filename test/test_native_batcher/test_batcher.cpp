@@ -87,7 +87,7 @@ void test_batcher_multiple_unique_ids()
     ids[0].id = 0x118; ids[0].dlc = 8;
     ids[1].id = 0x257; ids[1].dlc = 8;
     ids[2].id = 0x389; ids[2].dlc = 8;
-    ids[3].id = 0x39D; ids[3].dlc = 8;
+    ids[3].id = 0x117; ids[3].dlc = 8;
     ids[4].id = 0x3F5; ids[4].dlc = 8;
     for (auto &f : ids)
         batcher.add(f);

@@ -347,6 +347,23 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
     </div>
   </div>
 
+  <div class="subsec" data-subkey="config-can-filter">
+    <div class="subsec-head">
+      <div class="subsec-title">CAN 过滤 <span class="title-help" onclick="return toggleHelp(this,event)" title="开启后只接收选定的 CAN ID（0x118、0x257、0x389、0x117、0x3F5、0x3E2），关闭则接收总线所有帧。">?</span></div>
+      <div class="subsec-meta">CAN ID 接收控制</div>
+    </div>
+    <div class="subsec-body">
+      <div class="setting-row" style="padding-top:0">
+        <div class="setting-info">
+          <div class="setting-name">CAN ID 过滤 <span class="title-help" onclick="return toggleHelp(this,event)" title="关闭过滤可嗅探所有 CAN 帧，适用于调试。开启后仅转发指定信号到 ESP-NOW。">?</span></div>
+          <div class="setting-desc">关闭 = 接收所有 CAN 帧（不过滤）</div>
+        </div>
+        <label class="tgl"><input type="checkbox" id="tgl-fltr" checked onchange="pushFilter()">
+          <div class="tgl-track"><div class="tgl-thumb"></div></div></label>
+      </div>
+    </div>
+  </div>
+
   <div class="subsec" data-subkey="config-dashboard-log" style="margin-top:14px">
     <div class="subsec-head">
       <div class="subsec-title">仪表盘日志 <span class="title-help" onclick="return toggleHelp(this,event)" title="显示最近的仪表盘和固件日志。这是仪表盘日志输出，不是CAN嗅探器。">?</span></div>
@@ -1072,6 +1089,12 @@ async function pushLogging(){
   poll();
 }
 
+async function pushFilter(){
+  const body='fltr='+($('tgl-fltr').checked?'1':'0');
+  try{await fetch('/filter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});}catch(e){}
+  poll();
+}
+
 async function emergencyStop(){if(!await dashConfirm('停止注入？重启后仍保持禁用，直到您按下"恢复注入"。','停止注入','停止'))return;try{await fetch('/disable',{method:'POST'});}catch(e){}poll();}
 async function resumeInj(){try{await fetch('/config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'hw='+state.hw+'&sp='+state.sp+'&spa='+(state.spAuto?'1':'0')+'&can=1'});}catch(e){}poll();}
 async function reboot(){if(!await dashConfirm('重启设备？','重启','重启'))return;try{await fetch('/reboot',{method:'POST'});}catch(e){}}
@@ -1394,6 +1417,7 @@ async function poll(){
     if(d.mux){for(let i=0;i<3;i++){setText('m'+i+'rx',d.mux[i].rx);setText('m'+i+'tx',d.mux[i].tx);const e=$('m'+i+'err');if(e){e.textContent=d.mux[i].err;e.style.color=d.mux[i].err>0?'var(--err)':'';}}}
     updateSniffIdToggle();
     const eprn=$('tgl-eprn');if(eprn&&typeof d.eprn!=='undefined')eprn.checked=d.eprn;
+    const fltr=$('tgl-fltr');if(fltr&&typeof d.fltr!=='undefined')fltr.checked=d.fltr;
     if(!dashboardInitialLoaded){
       dashboardInitialLoaded=true;
       pollLog();pollSniffer();pollCanIdCollector();pollPlugins();loadWifiNetworks();loadWifiStatus();loadApStatus();loadUpdateInfo();loadCanPins();

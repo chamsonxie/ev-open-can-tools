@@ -92,7 +92,7 @@ void test_parseDI_speed_short_dlc_returns_defaults()
     TEST_ASSERT_EQUAL_UINT16(0, s.vehicleSpeed);
 }
 
-// ── IBST_status (0x39D / 925) ──
+// ── IBST_status (0x117 / 279) ──
 
 void test_parseIBST_status_brake_apply()
 {
@@ -164,6 +164,29 @@ void test_parseDAS_status2_acc_speed_limit()
     TEST_ASSERT_EQUAL_UINT16(868, s.accSpeedLimit);
 }
 
+// ── 0x3E2 brake light ──
+
+void test_parseE32_brakeLight_on()
+{
+    uint8_t data[8] = {0x0D};
+    auto s = parseE32_brakeLight(data, 8);
+    TEST_ASSERT_EQUAL_UINT8(1, s.brakeLight);
+}
+
+void test_parseE32_brakeLight_off()
+{
+    uint8_t data[8] = {0x0C};
+    auto s = parseE32_brakeLight(data, 8);
+    TEST_ASSERT_EQUAL_UINT8(0, s.brakeLight);
+}
+
+void test_parseE32_brakeLight_short_dlc_returns_default()
+{
+    uint8_t data[8] = {0x0D};
+    auto s = parseE32_brakeLight(data, 0);
+    TEST_ASSERT_EQUAL_UINT8(0, s.brakeLight);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -190,6 +213,10 @@ int main()
     RUN_TEST(test_parseDAS_status2_long_collision);
     RUN_TEST(test_parseDAS_status2_short_dlc_returns_defaults);
     RUN_TEST(test_parseDAS_status2_acc_speed_limit);
+
+    RUN_TEST(test_parseE32_brakeLight_on);
+    RUN_TEST(test_parseE32_brakeLight_off);
+    RUN_TEST(test_parseE32_brakeLight_short_dlc_returns_default);
 
     return UNITY_END();
 }

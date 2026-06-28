@@ -52,6 +52,7 @@ struct AppContext
     std::unique_ptr<CanDriver> driver;
     std::unique_ptr<SelectedHandler> handler;
     SelectedHandler *activeHandler = nullptr;
+    bool prevFilterEnabled = true;
 
     static AppContext &instance()
     {
@@ -174,6 +175,15 @@ static void appLoop()
 
     auto &ctx = AppContext::instance();
     SelectedHandler *h = ctx.current();
+
+    bool curFilter = h->filterEnabled;
+    if (curFilter != ctx.prevFilterEnabled)
+    {
+        ctx.prevFilterEnabled = curFilter;
+        ctx.driver->setFilters(h->filterIds(), h->filterIdCount());
+        Serial.print("[CAN] filters ");
+        Serial.println(curFilter ? "enabled" : "disabled (accept all)");
+    }
 
     CanFrameBatcher batcher;
     CanFrame frame;

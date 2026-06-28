@@ -133,6 +133,11 @@ struct VCFRONT_lighting_s
     uint8_t sideRepeaterRightStatus;
 };
 
+struct E32_brakeLight_s
+{
+    uint8_t brakeLight;  // 0=off, 1=on (data[0] low nibble 0xC→0xD)
+};
+
 // ── Unified signal parsing functions ──
 
 inline DI_systemStatus_s parseDI_systemStatus(const uint8_t *data, uint8_t dlc)
@@ -217,5 +222,13 @@ inline VCFRONT_lighting_s parseVCFRONT_lighting(const uint8_t *data, uint8_t dlc
     s.turnSignalRightStatus  = (data[6] >> 4) & 0x03;
     s.parkLeftStatus         = (data[6] >> 6) & 0x03;
     s.parkRightStatus        = data[7] & 0x03;
+    return s;
+}
+
+inline E32_brakeLight_s parseE32_brakeLight(const uint8_t *data, uint8_t dlc)
+{
+    E32_brakeLight_s s = {};
+    if (dlc < 1) return s;
+    s.brakeLight = data[0] & 0x01;
     return s;
 }

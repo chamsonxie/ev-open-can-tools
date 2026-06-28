@@ -53,15 +53,19 @@ struct CarManagerBase
 
 struct MyCanHandler : public CarManagerBase<MyCanHandler>
 {
+    Shared<bool> filterEnabled{true};
+
     static constexpr uint32_t kFilterIds[] = {
-        0x118, 0x257, 0x389, 0x39D, 0x3F5
-    };
+        0x118, 0x257, 0x389, 0x117, 0x3F5, 0x3E2, 0x102};
 
     const uint32_t *filterIds() const
     {
         return kFilterIds;
     }
-    uint8_t filterIdCount() const { return 5; }
+    uint8_t filterIdCount() const
+    {
+        return filterEnabled ? (sizeof(kFilterIds) / sizeof(kFilterIds[0])) : 0;
+    }
 
     void handleMessage(const CanFrame &frame)
     {
