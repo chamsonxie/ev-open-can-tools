@@ -117,12 +117,36 @@ static void espnowUpdateFromFrame(const CanFrame &frame)
         return;
     }
 
-    // 0x212 VCLEFT_status — VCLEFT_powerState : 16|8@1+ (1,0) [0|255]
-    //   2 = power off (deep sleep); 0x21 = awake
+    // 0x212 — ID212BMS_status (BMS 状态, 休眠备用条件)
     if (frame.id == 530 || frame.id == 0x212)
     {
-        if (frame.dlc < 3) return;
-        espnowCurData.vehicleLocked = (extractIntel(frame.data, 16, 8) == 2) ? 1 : 0;
+        auto s = parseID212BMS_status(frame.data, frame.dlc);
+        if (frame.dlc < 8) return;
+        espnowCurData.bmsState        = s.bmsState;
+        espnowCurData.bmsHvState      = s.hvState;
+        espnowCurData.bmsChargeStatus = s.uiChargeStatus;
+        // BMS 备选: HV_DOWN/HV_GOING_DOWN + BMS_STANDBY → 锁车
+        // 但 UI_powerOff 优先级更高（无论充电状态都能判定）
+        espnowCurData.vehicleLocked = espnowCurData.uiPowerOff ||
+            (((s.hvState == 0 || s.hvState == 2) && s.bmsState == 0) ? 1 : 0);
+        return;
+    }
+
+    // 0x273 — ID273UI_vehicleControl (主休眠信号: UI_powerOff)
+    if (frame.id == 627 || frame.id == 0x273)
+    {
+        auto s = parseID273UI_vehicleControl(frame.data, frame.dlc);
+        if (frame.dlc < 8) return;
+        espnowCurData.uiPowerOff = s.powerOff;
+        // UI_powerOff=1 → 车辆下电，立即标记休眠
+        if (s.powerOff) {
+            espnowCurData.vehicleLocked = 1;
+        } else {
+            // 未下电但 BMS 状态已就绪 → 用 BMS 条件判断
+            espnowCurData.vehicleLocked =
+                (espnowCurData.bmsHvState == 0 || espnowCurData.bmsHvState == 2)
+                && espnowCurData.bmsState == 0;
+        }
         return;
     }
 }

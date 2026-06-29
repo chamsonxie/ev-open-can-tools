@@ -4,15 +4,18 @@
 #include "drivers/twai_driver.h"
 #include "espnow/signals.h"
 #include "esp_sleep.h"
+#include "driver/gpio.h"
 
 static constexpr unsigned long SLEEP_TIMEOUT_MS = 30000;
 static constexpr uint64_t SLEEP_WAKEUP_US = 60ULL * 1000000ULL;
 
 static void enterDeepSleep()
 {
-    Serial.println("[SLEEP] Entering deep sleep, timer wake 60s");
+    Serial.println("[SLEEP] Entering deep sleep, timer+GPIO wake");
     Serial.flush();
+    // 定时器唤醒（兜底）+ CAN RX 引脚下降沿唤醒（总线活动时恢复）
     esp_sleep_enable_timer_wakeup(SLEEP_WAKEUP_US);
+    esp_sleep_enable_ext0_wakeup(TWAI_RX_PIN, 0);
     esp_deep_sleep_start();
 }
 
@@ -49,11 +52,18 @@ static void app_main_loop()
     mcpDashboardLoop();
 #endif
 
-    // Deep sleep when car is off: vehicleLocked=1 AND no CAN for 30s
-    if (espnowCurData.vehicleLocked && lastCanSignalMs > 0
-        && millis() - lastCanSignalMs >= SLEEP_TIMEOUT_MS)
+    // Deep sleep: UI_powerOff → immediate, else BMS condition + 30s timeout
+    if (espnowCurData.vehicleLocked)
     {
-        enterDeepSleep();
+        if (espnowCurData.uiPowerOff)
+        {
+            delay(2000);
+            enterDeepSleep();
+        }
+        else if (lastCanSignalMs > 0 && millis() - lastCanSignalMs >= SLEEP_TIMEOUT_MS)
+        {
+            enterDeepSleep();
+        }
     }
 }
 

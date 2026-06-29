@@ -201,7 +201,87 @@ inline const char *mirrorHeatName(uint8_t v)
     }
 }
 
-// ── formatCanTranslation: all DBC signals for 6 CAN IDs ──
+// ── UI control signal name helpers ──
+
+inline const char *lockRequestName(uint8_t v)
+{
+    switch (v) { case 0: return "无操作"; case 1: return "上锁"; case 2: return "解锁"; default: return "?"; }
+}
+
+inline const char *wiperModeName(uint8_t v)
+{
+    switch (v) { case 0: return "关"; case 1: return "间歇"; case 2: return "低速"; case 3: return "高速"; default: return "?"; }
+}
+
+inline const char *wiperRequestName(uint8_t v)
+{
+    switch (v) { case 0: return "停止"; case 1: return "低速"; case 2: return "高速"; case 3: return "喷水"; case 4: return "单次"; case 5: return "间歇1"; case 6: return "间歇2"; default: return "?"; }
+}
+
+inline const char *domeLightName(uint8_t v)
+{
+    switch (v) { case 0: return "关"; case 1: return "开门亮"; case 2: return "开"; default: return "?"; }
+}
+
+inline const char *seatHeatName(uint8_t v)
+{
+    switch (v) { case 0: return "关"; case 1: return "1档"; case 2: return "2档"; case 3: return "3档"; default: return "?"; }
+}
+
+inline const char *mirrorFoldName2(uint8_t v)
+{
+    switch (v) { case 0: return "无"; case 1: return "折叠"; case 2: return "展开"; default: return "?"; }
+}
+
+inline const char *remoteStartName(uint8_t v)
+{
+    switch (v) { case 0: return "无"; case 1: return "温控"; case 2: return "温控+除霜"; case 4: return "中止"; default: return "?"; }
+}
+
+// ── BMS state name helpers ──
+
+inline const char *bmsHvStateName(uint8_t v)
+{
+    switch (v)
+    {
+    case 0: return "HV_DOWN"; case 1: return "HV_COMING_UP"; case 2: return "HV_GOING_DOWN";
+    case 3: return "HV_UP_FOR_DRIVE"; case 4: return "HV_UP_FOR_CHARGE";
+    case 5: return "HV_UP_FOR_DC_CHARGE"; case 6: return "HV_UP"; default: return "?";
+    }
+}
+
+inline const char *bmsStateName(uint8_t v)
+{
+    switch (v)
+    {
+    case 0: return "STANDBY"; case 1: return "DRIVE"; case 2: return "SUPPORT";
+    case 3: return "CHARGE"; case 4: return "FEIM"; case 5: return "CLEAR_FAULT";
+    case 6: return "FAULT"; case 7: return "WELD"; case 8: return "TEST";
+    case 9: return "SNA"; case 10: return "DIAG"; default: return "?";
+    }
+}
+
+inline const char *bmsChargeStatusName(uint8_t v)
+{
+    switch (v)
+    {
+    case 0: return "未连接"; case 1: return "无电源"; case 2: return "即将充电";
+    case 3: return "充电中"; case 4: return "充电完成"; case 5: return "充电停止";
+    default: return "?";
+    }
+}
+
+inline const char *bmsContactorName(uint8_t v)
+{
+    switch (v)
+    {
+    case 0: return "SNA"; case 1: return "打开"; case 2: return "打开中";
+    case 3: return "关闭中"; case 4: return "关闭"; case 5: return "焊接";
+    case 6: return "阻塞"; default: return "?";
+    }
+}
+
+// ── formatCanTranslation: all DBC signals for all CAN IDs ──
 // Uses the unified signal parsers from can_helpers.h to eliminate bit-extraction duplication.
 
 inline bool formatCanTranslation(uint32_t id, const uint8_t *data, uint8_t dlc, char *out, size_t outLen)
@@ -328,6 +408,66 @@ inline bool formatCanTranslation(uint32_t id, const uint8_t *data, uint8_t dlc, 
                  mirrorFoldName(s.mirrorFoldState), mirrorStateName(s.mirrorState),
                  mirrorHeatName(s.mirrorHeatState), s.mirrorDipped ? "开" : "关",
                  s.mirrorTiltXPosition * 0.02f, s.mirrorTiltYPosition * 0.02f);
+        strlcpy(out, tmp, outLen);
+        return true;
+    }
+
+    if (id == 627 || id == 0x273)
+    {
+        auto s = parseID273UI_vehicleControl(data, dlc);
+        if (dlc < 8) return false;
+        char tmp[512];
+        snprintf(tmp, sizeof(tmp),
+                 "下电:%s 锁请求:%s 全局解锁:%s 报警:%s 入侵:%s "
+                 "走近开:%s 离开锁:%s 驻车解锁:%s 童锁:%s 前雾灯:%s 后雾灯:%s "
+                 "前座加热:%s/%s 后座加热:%s/%s/%s "
+                 "雨刮:%s(%s) 后窗锁:%s 折叠:%s 后视镜加热:%s 自动折叠:%s 倒车下翻:%s "
+                 "遥控:%s 远光:%s 氛围灯:%s 顶灯:%s 亮度:%.0f%% "
+                 "喇叭:%s 召唤:%s 前备箱:%s 驻车远程:%s 驻车灯:%s 方向盘:%s 模式:%d",
+                 s.powerOff ? "是" : "否",
+                 lockRequestName(s.lockRequest), s.globalUnlockOn ? "开" : "关",
+                 s.alarmEnabled ? "设防" : "撤销", s.intrusionSensorOn ? "开" : "关",
+                 s.walkUpUnlock ? "开" : "关", s.walkAwayLock ? "开" : "关",
+                 s.unlockOnPark ? "开" : "关", s.childDoorLockOn ? "开" : "关",
+                 s.frontFogSwitch ? "开" : "关", s.rearFogSwitch ? "开" : "关",
+                 seatHeatName(s.frontLeftSeatHeatReq), seatHeatName(s.frontRightSeatHeatReq),
+                 seatHeatName(s.rearLeftSeatHeatReq), seatHeatName(s.rearCenterSeatHeatReq), seatHeatName(s.rearRightSeatHeatReq),
+                 wiperModeName(s.wiperMode), wiperRequestName(s.wiperRequest),
+                 s.rearWindowLockout ? "开" : "关",
+                 mirrorFoldName2(s.mirrorFoldRequest), s.mirrorHeatRequest ? "开" : "关",
+                 s.autoFoldMirrorsOn ? "开" : "关", s.mirrorDipOnReverse ? "开" : "关",
+                 remoteStartName(s.remoteStartRequest),
+                 s.autoHighBeamEnabled ? "开" : "关", s.ambientLightingEnabled ? "开" : "关",
+                 domeLightName(s.domeLightSwitch),
+                 s.displayBrightnessLevel * 0.5f,
+                 s.honkHorn ? "按" : "松", s.summonActive ? "激活" : "未激活",
+                 s.frunkRequest ? "请求" : "无",
+                 s.driveStateRequest ? "请求" : "无",
+                 s.seeYouHomeLightingOn ? "开" : "关",
+                 s.steeringBacklightEnabled ? "开" : "关",
+                 s.steeringButtonMode);
+        strlcpy(out, tmp, outLen);
+        return true;
+    }
+
+    if (id == 530 || id == 0x212)
+    {
+        auto s = parseID212BMS_status(data, dlc);
+        if (dlc < 8) return false;
+        float iso = s.isolationResistance == 1023 ? -1.0f : s.isolationResistance * 10.0f;
+        float chg = s.chgPowerAvailable == 2047 ? -1.0f : s.chgPowerAvailable * 0.125f;
+        char tmp[256];
+        snprintf(tmp, sizeof(tmp),
+                 "BMS状态:%s HV:%s 充电:%s 接触器:%s "
+                 "隔离:%.0fkΩ 充电功率:%.1fkW 预热:%s 充电请求:%s "
+                 "LIMP:%s 空运:%s 陆运:%s 重试:%d SM请求:%d",
+                 bmsStateName(s.bmsState), bmsHvStateName(s.hvState),
+                 bmsChargeStatusName(s.uiChargeStatus), bmsContactorName(s.contactorState),
+                 iso < 0 ? -1.0f : iso, chg < 0 ? -1.0f : chg,
+                 s.keepWarmRequest ? "请求" : "无", s.chargeRequest ? "请求" : "无",
+                 s.diLimpRequest ? "焊接" : "无",
+                 s.okToShipByAir ? "是" : "否", s.okToShipByLand ? "是" : "否",
+                 s.chargeRetryCount, s.smStateRequest);
         strlcpy(out, tmp, outLen);
         return true;
     }

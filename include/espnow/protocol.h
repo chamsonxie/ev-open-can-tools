@@ -88,13 +88,21 @@ struct __attribute__((packed)) EspNowCanDataPkt
     // 0x102/0x103 door status — bit0=左前, bit1=左后, bit2=右前, bit3=右后
     uint8_t doorOpenBits;
 
-    // 0x212 VCLEFT_status — byte[2] powerState: 2=off, 0x21=awake
+    // 0x212 ID212BMS_status
+    uint8_t bmsState;           // BMS_state (0=STANDBY,1=DRIVE,3=CHARGE...)
+    uint8_t bmsHvState;         // BMS_hvState (0=HV_DOWN,6=HV_UP...)
+    uint8_t bmsChargeStatus;    // BMS_uiChargeStatus (0=未连接,3=充电中...)
+
+    // 0x273 ID273UI_vehicleControl — primary sleep signal
+    uint8_t uiPowerOff;         // UI_powerOff (1=功率下电中)
+
+    // sleep: UI_powerOff || (HV_DOWN/HV_GOING_DOWN && BMS_STANDBY)
     uint8_t vehicleLocked;
 
     uint8_t chksum;
 };
 
-static_assert(sizeof(EspNowCanDataPkt) == 50, "EspNowCanDataPkt size mismatch");
+static_assert(sizeof(EspNowCanDataPkt) == 54, "EspNowCanDataPkt size mismatch");
 
 struct EspNowDiscoveredDev
 {

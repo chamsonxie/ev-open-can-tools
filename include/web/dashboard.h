@@ -181,13 +181,17 @@ static const char *decodeCanId(uint32_t id)
         return "VCLEFT_doorStatus (左门/左后视镜)";
     case 0x103:
         return "VCRIGHT_doorStatus (右门/尾门/右后视镜)";
+    case 0x212:
+        return "ID212BMS_status (BMS 电池状态/锁车状态)";
+    case 0x273:
+        return "ID273UI_vehicleControl (车辆控制/下电信号)";
     default:
         return "";
     }
 }
 
 // Sniff: CAN IDs relayed via ESP-NOW
-static constexpr uint32_t kDashboardSniffIds[] = {0x118, 0x257, 0x389, 0x107, 0x3F5, 0x3E2, 0x102, 0x103};
+static constexpr uint32_t kDashboardSniffIds[] = {0x118, 0x257, 0x389, 0x107, 0x3F5, 0x3E2, 0x102, 0x103, 0x212, 0x273};
 static constexpr uint8_t kDashboardSniffIdCount = sizeof(kDashboardSniffIds) / sizeof(kDashboardSniffIds[0]);
 
 // CAN ID collector — tracks every observed CAN ID and its receive count

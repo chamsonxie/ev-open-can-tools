@@ -138,6 +138,74 @@ struct E32_brakeLight_s
     uint8_t brakeLight;  // 0=off, 1=on (data[0] low nibble 0xC→0xD)
 };
 
+struct ID273UI_vehicleControl_s
+{
+    uint8_t accessoryPowerRequest;     // bit 0,  1
+    uint8_t frontFogSwitch;            // bit 3,  1
+    uint8_t summonActive;              // bit 4,  1
+    uint8_t frunkRequest;              // bit 5,  1
+    uint8_t wiperMode;                 // bit 6,  2
+    uint8_t steeringBacklightEnabled;  // bit 8,  1
+    uint8_t steeringButtonMode;        // bit 9,  3
+    uint8_t walkUpUnlock;              // bit 12, 1
+    uint8_t walkAwayLock;              // bit 13, 1
+    uint8_t unlockOnPark;              // bit 14, 1
+    uint8_t globalUnlockOn;            // bit 15, 1
+    uint8_t childDoorLockOn;           // bit 16, 1
+    uint8_t lockRequest;               // bit 17, 3
+    uint8_t alarmEnabled;              // bit 20, 1
+    uint8_t intrusionSensorOn;         // bit 21, 1
+    uint8_t stop12vSupport;            // bit 22, 1
+    uint8_t rearFogSwitch;             // bit 23, 1
+    uint8_t mirrorFoldRequest;         // bit 24, 2
+    uint8_t mirrorHeatRequest;         // bit 26, 1
+    uint8_t remoteStartRequest;        // bit 27, 3
+    uint8_t seeYouHomeLightingOn;      // bit 30, 1
+    uint8_t powerOff;                  // bit 31, 1
+    uint8_t displayBrightnessLevel;    // bit 32, 8
+    uint8_t ambientLightingEnabled;    // bit 40, 1
+    uint8_t autoHighBeamEnabled;       // bit 41, 1
+    uint8_t frontLeftSeatHeatReq;      // bit 42, 2
+    uint8_t frontRightSeatHeatReq;     // bit 44, 2
+    uint8_t rearLeftSeatHeatReq;       // bit 46, 2
+    uint8_t rearCenterSeatHeatReq;     // bit 48, 2
+    uint8_t rearRightSeatHeatReq;      // bit 50, 2
+    uint8_t autoFoldMirrorsOn;         // bit 52, 1
+    uint8_t mirrorDipOnReverse;        // bit 53, 1
+    uint8_t remoteClosureRequest;      // bit 54, 2
+    uint8_t wiperRequest;              // bit 56, 3
+    uint8_t domeLightSwitch;           // bit 59, 2
+    uint8_t honkHorn;                  // bit 61, 1
+    uint8_t driveStateRequest;         // bit 62, 1
+    uint8_t rearWindowLockout;         // bit 63, 1
+};
+
+struct ID212BMS_status_s
+{
+    uint8_t hvacPowerRequest;         // bit 0,  1
+    uint8_t notEnoughPowerForDrive;   // bit 1,  1
+    uint8_t notEnoughPowerForSupport; // bit 2,  1
+    uint8_t preconditionAllowed;      // bit 3,  1
+    uint8_t updateAllowed;            // bit 4,  1
+    uint8_t activeHeatingWorthwhile;  // bit 5,  1
+    uint8_t cpMiaOnHvs;               // bit 6,  1
+    uint8_t pcsPwmEnabled;            // bit 7,  1
+    uint8_t contactorState;           // bit 8,  3
+    uint8_t uiChargeStatus;           // bit 11, 3
+    uint8_t ecuLogUploadRequest;      // bit 14, 2
+    uint8_t hvState;                  // bit 16, 3
+    uint16_t isolationResistance;     // bit 19, 10 (10 kOhm/bit)
+    uint8_t chargeRetryCount;         // bit 51, 3  — reserved for future use
+    uint8_t chargeRequest;            // bit 29, 1
+    uint8_t keepWarmRequest;          // bit 30, 1
+    uint8_t bmsState;                 // bit 32, 4
+    uint8_t diLimpRequest;            // bit 36, 1
+    uint8_t okToShipByAir;            // bit 37, 1
+    uint8_t okToShipByLand;           // bit 38, 1
+    uint16_t chgPowerAvailable;       // bit 40, 11 (0.125 kW/bit)
+    uint8_t smStateRequest;           // bit 56, 4
+};
+
 struct VCLEFT_doorStatus_s
 {
     uint8_t frontLatchStatus;
@@ -278,6 +346,80 @@ inline E32_brakeLight_s parseE32_brakeLight(const uint8_t *data, uint8_t dlc)
     E32_brakeLight_s s = {};
     if (dlc < 1) return s;
     s.brakeLight = data[0] & 0x01;
+    return s;
+}
+
+inline ID273UI_vehicleControl_s parseID273UI_vehicleControl(const uint8_t *data, uint8_t dlc)
+{
+    ID273UI_vehicleControl_s s = {};
+    if (dlc < 8) return s;
+    s.accessoryPowerRequest    = (uint8_t)extractIntel(data,  0, 1);
+    s.frontFogSwitch           = (uint8_t)extractIntel(data,  3, 1);
+    s.summonActive             = (uint8_t)extractIntel(data,  4, 1);
+    s.frunkRequest             = (uint8_t)extractIntel(data,  5, 1);
+    s.wiperMode                = (uint8_t)extractIntel(data,  6, 2);
+    s.steeringBacklightEnabled = (uint8_t)extractIntel(data,  8, 1);
+    s.steeringButtonMode       = (uint8_t)extractIntel(data,  9, 3);
+    s.walkUpUnlock             = (uint8_t)extractIntel(data, 12, 1);
+    s.walkAwayLock             = (uint8_t)extractIntel(data, 13, 1);
+    s.unlockOnPark             = (uint8_t)extractIntel(data, 14, 1);
+    s.globalUnlockOn           = (uint8_t)extractIntel(data, 15, 1);
+    s.childDoorLockOn          = (uint8_t)extractIntel(data, 16, 1);
+    s.lockRequest              = (uint8_t)extractIntel(data, 17, 3);
+    s.alarmEnabled             = (uint8_t)extractIntel(data, 20, 1);
+    s.intrusionSensorOn        = (uint8_t)extractIntel(data, 21, 1);
+    s.stop12vSupport           = (uint8_t)extractIntel(data, 22, 1);
+    s.rearFogSwitch            = (uint8_t)extractIntel(data, 23, 1);
+    s.mirrorFoldRequest        = (uint8_t)extractIntel(data, 24, 2);
+    s.mirrorHeatRequest        = (uint8_t)extractIntel(data, 26, 1);
+    s.remoteStartRequest       = (uint8_t)extractIntel(data, 27, 3);
+    s.seeYouHomeLightingOn     = (uint8_t)extractIntel(data, 30, 1);
+    s.powerOff                 = (uint8_t)extractIntel(data, 31, 1);
+    s.displayBrightnessLevel   = (uint8_t)extractIntel(data, 32, 8);
+    s.ambientLightingEnabled   = (uint8_t)extractIntel(data, 40, 1);
+    s.autoHighBeamEnabled      = (uint8_t)extractIntel(data, 41, 1);
+    s.frontLeftSeatHeatReq     = (uint8_t)extractIntel(data, 42, 2);
+    s.frontRightSeatHeatReq    = (uint8_t)extractIntel(data, 44, 2);
+    s.rearLeftSeatHeatReq      = (uint8_t)extractIntel(data, 46, 2);
+    s.rearCenterSeatHeatReq    = (uint8_t)extractIntel(data, 48, 2);
+    s.rearRightSeatHeatReq     = (uint8_t)extractIntel(data, 50, 2);
+    s.autoFoldMirrorsOn        = (uint8_t)extractIntel(data, 52, 1);
+    s.mirrorDipOnReverse       = (uint8_t)extractIntel(data, 53, 1);
+    s.remoteClosureRequest     = (uint8_t)extractIntel(data, 54, 2);
+    s.wiperRequest             = (uint8_t)extractIntel(data, 56, 3);
+    s.domeLightSwitch          = (uint8_t)extractIntel(data, 59, 2);
+    s.honkHorn                 = (uint8_t)extractIntel(data, 61, 1);
+    s.driveStateRequest        = (uint8_t)extractIntel(data, 62, 1);
+    s.rearWindowLockout        = (uint8_t)extractIntel(data, 63, 1);
+    return s;
+}
+
+inline ID212BMS_status_s parseID212BMS_status(const uint8_t *data, uint8_t dlc)
+{
+    ID212BMS_status_s s = {};
+    if (dlc < 8) return s;
+    s.hvacPowerRequest         = (uint8_t)extractIntel(data,  0, 1);
+    s.notEnoughPowerForDrive   = (uint8_t)extractIntel(data,  1, 1);
+    s.notEnoughPowerForSupport = (uint8_t)extractIntel(data,  2, 1);
+    s.preconditionAllowed      = (uint8_t)extractIntel(data,  3, 1);
+    s.updateAllowed            = (uint8_t)extractIntel(data,  4, 1);
+    s.activeHeatingWorthwhile  = (uint8_t)extractIntel(data,  5, 1);
+    s.cpMiaOnHvs               = (uint8_t)extractIntel(data,  6, 1);
+    s.pcsPwmEnabled            = (uint8_t)extractIntel(data,  7, 1);
+    s.contactorState           = (uint8_t)extractIntel(data,  8, 3);
+    s.uiChargeStatus           = (uint8_t)extractIntel(data, 11, 3);
+    s.ecuLogUploadRequest      = (uint8_t)extractIntel(data, 14, 2);
+    s.hvState                  = (uint8_t)extractIntel(data, 16, 3);
+    s.isolationResistance      = (uint16_t)extractIntel(data, 19, 10);
+    s.chargeRequest            = (uint8_t)extractIntel(data, 29, 1);
+    s.keepWarmRequest          = (uint8_t)extractIntel(data, 30, 1);
+    s.bmsState                 = (uint8_t)extractIntel(data, 32, 4);
+    s.diLimpRequest            = (uint8_t)extractIntel(data, 36, 1);
+    s.okToShipByAir            = (uint8_t)extractIntel(data, 37, 1);
+    s.okToShipByLand           = (uint8_t)extractIntel(data, 38, 1);
+    s.chgPowerAvailable        = (uint16_t)extractIntel(data, 40, 11);
+    s.chargeRetryCount         = (uint8_t)extractIntel(data, 51, 3);
+    s.smStateRequest           = (uint8_t)extractIntel(data, 56, 4);
     return s;
 }
 
